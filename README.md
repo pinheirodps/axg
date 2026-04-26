@@ -21,7 +21,7 @@ This pattern helps teams safely adopt AI in financial and operational workflows 
 
 ## Architecture Overview
 
-![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.png)
 
 Execution flow:
 
