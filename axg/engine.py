@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -28,7 +29,9 @@ DEFAULT_PENALTY = {
 
 
 class DecisionEngine:
-    def __init__(self, loader: PluginLoader | None = None, rules: RuleEngine | None = None):
+    def __init__(
+        self, loader: PluginLoader | None = None, rules: RuleEngine | None = None
+    ):
         self.loader = loader or PluginLoader()
         self.rules = rules or RuleEngine()
 
@@ -56,13 +59,7 @@ class DecisionEngine:
             ],
             metadata=request.metadata,
         )
-        logger.info(
-            "AXG decision execution_id=%s plugin=%s decision=%s rules=%s",
-            response.execution_id,
-            response.plugin_version,
-            response.decision.value,
-            [rule.id for rule in triggered_rules],
-        )
+        logger.info(json.dumps(self._decision_log(request, response), sort_keys=True))
         return response
 
     def _final_decision(
@@ -84,7 +81,9 @@ class DecisionEngine:
             return Decision.SUGGEST
         return Decision.CONFIRM
 
-    def _permission_decision(self, plugin: Plugin, request: DecisionRequest) -> Decision | None:
+    def _permission_decision(
+        self, plugin: Plugin, request: DecisionRequest
+    ) -> Decision | None:
         policy = plugin.actions.get(request.action_type)
         if not policy:
             return Decision.CONFIRM
@@ -108,7 +107,11 @@ class DecisionEngine:
             for rule in triggered_rules
         )
         action_policy = plugin.actions.get(request.action_type)
-        risk = action_policy.base_risk if action_policy else plugin.thresholds.high_risk_threshold
+        risk = (
+            action_policy.base_risk
+            if action_policy
+            else plugin.thresholds.high_risk_threshold
+        )
         risk += sum(rule.risk_delta for rule in triggered_rules)
 
         return DecisionScores(
@@ -123,9 +126,18 @@ class DecisionEngine:
         triggered_rules: list[PolicyRule],
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "proposed_action": request.payload.get("proposed_action", request.action_type)
+            "proposed_action": request.payload.get(
+                "proposed_action", request.action_type
+            )
         }
-        for key in ("transaction_id", "merchant", "amount", "currency", "category", "description"):
+        for key in (
+            "transaction_id",
+            "merchant",
+            "amount",
+            "currency",
+            "category",
+            "description",
+        ):
             if key in request.payload:
                 payload[key] = request.payload[key]
         if "proposed_category" in request.payload:
@@ -152,7 +164,7 @@ class DecisionEngine:
         return list(dict.fromkeys(flags))
 
     def _fail_safe(self, request: DecisionRequest, reason: str) -> DecisionResponse:
-        return DecisionResponse(
+        response = DecisionResponse(
             execution_id=request.execution_id,
             plugin_version=f"{request.plugin_id}@unavailable",
             decision=Decision.CONFIRM,
@@ -167,6 +179,37 @@ class DecisionEngine:
             rules_triggered=[],
             metadata=request.metadata,
         )
+        logger.warning(
+            json.dumps(self._decision_log(request, response), sort_keys=True)
+        )
+        return response
+
+    def _decision_log(
+        self, request: DecisionRequest, response: DecisionResponse
+    ) -> dict[str, Any]:
+        audit_flags = response.audit_flags
+        return {
+            "service": "axg",
+            "component": "decision_engine",
+            "event": "axg.decision.evaluated",
+            "flow": request.metadata.get("flow")
+            or f"{request.source}:{request.action_type}",
+            "situation": request.metadata.get("situation")
+            or (audit_flags[0] if audit_flags else response.decision.value.lower()),
+            "execution_id": response.execution_id,
+            "app_id": request.app_id,
+            "plugin_id": request.plugin_id,
+            "plugin_version": response.plugin_version,
+            "source": request.source,
+            "action_type": request.action_type,
+            "decision": response.decision.value,
+            "llm_confidence": response.scores.llm_confidence,
+            "final_confidence": response.scores.final_confidence,
+            "risk_score": response.scores.risk_score,
+            "audit_flags": audit_flags,
+            "rules_triggered": [rule.id for rule in response.rules_triggered],
+            "tenant_id": request.metadata.get("tenant_id"),
+        }
 
     def _clamp(self, value: float) -> float:
         return max(0.0, min(1.0, round(value, 4)))
