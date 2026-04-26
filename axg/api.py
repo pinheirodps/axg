@@ -7,8 +7,7 @@ from axg.engine import DecisionEngine
 from axg.models import DecisionRequest, DecisionResponse
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(
     title="AXG - Agent Execution Guard",
@@ -44,4 +43,21 @@ def create_decision(request: DecisionRequest) -> DecisionResponse:
             sort_keys=True,
         )
     )
-    return engine.decide(request)
+    response = engine.decide(request)
+    logger.info(
+        json.dumps(
+            {
+                "service": "axg",
+                "component": "api",
+                "event": "axg.decision.response_emitted",
+                "flow": request.metadata.get("flow")
+                or f"{request.source}:{request.action_type}",
+                "execution_id": response.execution_id,
+                "decision": response.decision.value,
+                "plugin_version": response.plugin_version,
+                "tenant_id": request.metadata.get("tenant_id"),
+            },
+            sort_keys=True,
+        )
+    )
+    return response
