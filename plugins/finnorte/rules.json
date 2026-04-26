@@ -11,6 +11,18 @@
     "create_expense": {
       "base_risk": 0.45
     },
+    "add_expense": {
+      "base_risk": 0.45
+    },
+    "create_income": {
+      "base_risk": 0.35
+    },
+    "add_income": {
+      "base_risk": 0.35
+    },
+    "create_transaction": {
+      "base_risk": 0.4
+    },
     "categorize_transaction": {
       "base_risk": 0.25
     },

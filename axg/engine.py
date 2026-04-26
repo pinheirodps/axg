@@ -19,6 +19,18 @@ from axg.rules import RuleEngine
 
 logger = logging.getLogger(__name__)
 
+FINANCIAL_WRITE_ACTIONS = {
+    "add_expense",
+    "add_income",
+    "create_transaction",
+    "categorize_transaction",
+    "detect_subscription",
+    "create_expense",
+    "create_income",
+}
+
+UNCERTAIN_SOURCES = {"whatsapp_bot", "telegram_bot", "chat", "whatsapp", "telegram"}
+
 
 DEFAULT_PENALTY = {
     Decision.ALLOW: 0.0,
@@ -43,16 +55,17 @@ class DecisionEngine:
             return self._fail_safe(request, str(exc))
 
         triggered_rules = self.rules.evaluate_rules(plugin.rules, request.model_dump())
-        decision = self._final_decision(plugin, request, triggered_rules)
         scores = self._scores(plugin, request, triggered_rules)
+        decision = self._final_decision(plugin, request, triggered_rules, scores)
+        audit_flags = self._audit_flags(triggered_rules, request, scores)
         response = DecisionResponse(
             execution_id=request.execution_id,
             plugin_version=plugin.version_label,
             decision=decision,
             scores=scores,
             actionable_payload=self._actionable_payload(request, triggered_rules),
-            human_readable_reason=self._reason(decision, triggered_rules),
-            audit_flags=self._audit_flags(triggered_rules),
+            human_readable_reason=self._reason(decision, triggered_rules, request, scores),
+            audit_flags=audit_flags,
             rules_triggered=[
                 TriggeredRule(id=rule.id, decision=rule.decision, reason=rule.reason)
                 for rule in triggered_rules
@@ -67,7 +80,11 @@ class DecisionEngine:
         plugin: Plugin,
         request: DecisionRequest,
         triggered_rules: list[PolicyRule],
+        scores: DecisionScores,
     ) -> Decision:
+        if self._requires_uncertainty_confirmation(request, scores):
+            return Decision.CONFIRM
+
         permission_decision = self._permission_decision(plugin, request)
         decisions = [rule.decision for rule in triggered_rules]
         if permission_decision:
@@ -118,6 +135,7 @@ class DecisionEngine:
             llm_confidence=request.llm.confidence,
             final_confidence=self._clamp(request.llm.confidence - confidence_penalty),
             risk_score=self._clamp(risk),
+            uncertainty_score=self._uncertainty_score(request),
         )
 
     def _actionable_payload(
@@ -146,7 +164,18 @@ class DecisionEngine:
             payload.update(rule.actionable_payload)
         return payload
 
-    def _reason(self, decision: Decision, triggered_rules: list[PolicyRule]) -> str:
+    def _reason(
+        self,
+        decision: Decision,
+        triggered_rules: list[PolicyRule],
+        request: DecisionRequest,
+        scores: DecisionScores,
+    ) -> str:
+        if self._requires_uncertainty_confirmation(request, scores):
+            return (
+                "Intent could not be confidently identified. Because this is a "
+                "financial write operation, confirmation is required before saving."
+            )
         if triggered_rules:
             return " ".join(rule.reason for rule in triggered_rules)
         if decision == Decision.ALLOW:
@@ -157,10 +186,22 @@ class DecisionEngine:
             return "The proposed action is not permitted for this agent."
         return "The proposal requires confirmation before execution."
 
-    def _audit_flags(self, triggered_rules: list[PolicyRule]) -> list[str]:
+    def _audit_flags(
+        self,
+        triggered_rules: list[PolicyRule],
+        request: DecisionRequest,
+        scores: DecisionScores,
+    ) -> list[str]:
         flags: list[str] = []
         for rule in triggered_rules:
             flags.extend(rule.audit_flags or [rule.id])
+        intent = request.intent or {}
+        if intent.get("original") == "unknown":
+            flags.append("unknown_intent")
+        if intent.get("fallback_used") is True:
+            flags.append("fallback_used")
+        if self._is_financial_write(request) and scores.uncertainty_score >= 0.7:
+            flags.append("financial_write_requires_confirmation")
         return list(dict.fromkeys(flags))
 
     def _fail_safe(self, request: DecisionRequest, reason: str) -> DecisionResponse:
@@ -172,6 +213,7 @@ class DecisionEngine:
                 llm_confidence=request.llm.confidence,
                 final_confidence=0.0,
                 risk_score=1.0,
+                uncertainty_score=1.0,
             ),
             actionable_payload={},
             human_readable_reason=f"AXG failed safe: {reason}",
@@ -206,6 +248,7 @@ class DecisionEngine:
             "llm_confidence": response.scores.llm_confidence,
             "final_confidence": response.scores.final_confidence,
             "risk_score": response.scores.risk_score,
+            "uncertainty_score": response.scores.uncertainty_score,
             "audit_flags": audit_flags,
             "rules_triggered": [rule.id for rule in response.rules_triggered],
             "tenant_id": request.metadata.get("tenant_id"),
@@ -213,3 +256,29 @@ class DecisionEngine:
 
     def _clamp(self, value: float) -> float:
         return max(0.0, min(1.0, round(value, 4)))
+
+    def _uncertainty_score(self, request: DecisionRequest) -> float:
+        intent = request.intent or {}
+        score = 0.0
+        if intent.get("original") == "unknown":
+            score += 0.8
+        if intent.get("fallback_used") is True:
+            score += 0.2
+        if request.source in UNCERTAIN_SOURCES:
+            score += 0.1
+        if self._is_financial_write(request) and request.source in UNCERTAIN_SOURCES and not intent:
+            score = max(score, 0.7)
+        return self._clamp(score)
+
+    def _is_financial_write(self, request: DecisionRequest) -> bool:
+        resolved_intent = (request.intent or {}).get("resolved")
+        return (
+            request.action_type in FINANCIAL_WRITE_ACTIONS
+            or request.payload.get("proposed_action") in FINANCIAL_WRITE_ACTIONS
+            or resolved_intent in FINANCIAL_WRITE_ACTIONS
+        )
+
+    def _requires_uncertainty_confirmation(
+        self, request: DecisionRequest, scores: DecisionScores
+    ) -> bool:
+        return self._is_financial_write(request) and scores.uncertainty_score >= 0.7
