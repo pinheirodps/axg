@@ -207,7 +207,7 @@ def test_uber_1500_whatsapp_requires_confirmation():
     assert "significantly higher" in response.human_readable_reason
     assert response.scores.risk_score == 0.9
     assert response.scores.final_confidence == 0.48
-    assert response.scores.uncertainty_score == 0.1
+    assert response.scores.uncertainty_score == 0.0
 
 
 def test_decision_log_is_structured_for_flow_debugging(caplog):

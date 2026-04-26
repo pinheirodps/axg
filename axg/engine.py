@@ -29,7 +29,7 @@ FINANCIAL_WRITE_ACTIONS = {
     "create_income",
 }
 
-UNCERTAIN_SOURCES = {"whatsapp_bot", "telegram_bot", "chat", "whatsapp", "telegram"}
+UNCERTAIN_SOURCES = {"whatsapp_bot", "telegram_bot", "chat"}
 
 
 DEFAULT_PENALTY = {
@@ -264,11 +264,18 @@ class DecisionEngine:
             score += 0.8
         if intent.get("fallback_used") is True:
             score += 0.2
-        if request.source in UNCERTAIN_SOURCES:
+        if self._is_uncertain_source(request.source):
             score += 0.1
-        if self._is_financial_write(request) and request.source in UNCERTAIN_SOURCES and not intent:
+        if (
+            self._is_financial_write(request)
+            and self._is_uncertain_source(request.source)
+            and not intent
+        ):
             score = max(score, 0.7)
         return self._clamp(score)
+
+    def _is_uncertain_source(self, source: str) -> bool:
+        return source in UNCERTAIN_SOURCES or source.endswith("_bot")
 
     def _is_financial_write(self, request: DecisionRequest) -> bool:
         resolved_intent = (request.intent or {}).get("resolved")
