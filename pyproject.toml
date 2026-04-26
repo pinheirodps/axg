@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Agent Execution Guard: deterministic control plane for safe AI agent execution."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 dependencies = [
     "fastapi>=0.109.0",
     "pydantic>=2.6.0",
@@ -24,6 +24,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
+[tool.setuptools.packages.find]
+include = ["axg*"]
+
 [tool.coverage.run]
 source = ["axg"]
 omit = ["tests/*"]
@@ -32,4 +35,3 @@ omit = ["tests/*"]
 show_missing = true
 skip_covered = false
 precision = 2
-
