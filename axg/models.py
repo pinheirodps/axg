@@ -44,6 +44,7 @@ class DecisionRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
     llm: LlmSignal = Field(default_factory=LlmSignal)
+    intent: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -51,6 +52,7 @@ class DecisionScores(BaseModel):
     llm_confidence: float = Field(ge=0.0, le=1.0)
     final_confidence: float = Field(ge=0.0, le=1.0)
     risk_score: float = Field(ge=0.0, le=1.0)
+    uncertainty_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class TriggeredRule(BaseModel):
