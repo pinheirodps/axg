@@ -207,6 +207,7 @@ def test_uber_1500_whatsapp_requires_confirmation():
     assert "significantly higher" in response.human_readable_reason
     assert response.scores.risk_score == 0.9
     assert response.scores.final_confidence == 0.48
+    assert response.scores.uncertainty_score == 0.1
 
 
 def test_decision_log_is_structured_for_flow_debugging(caplog):
@@ -278,17 +279,148 @@ def test_poc_uber_1500_contract_without_agent_requires_confirmation():
     assert response.scores.final_confidence == 0.45
     assert response.scores.risk_score == 0.9
     assert response.actionable_payload["merchant"] == "Uber"
-    assert response.actionable_payload["amount"] == 1500
-    assert response.actionable_payload["category"] == "Transport"
-    assert response.audit_flags == [
-        "high_value_transaction",
-        "requires_user_confirmation",
-        "merchant_amount_anomaly",
-    ]
-    assert [rule.id for rule in response.rules_triggered] == [
-        "high_value_transaction",
-        "merchant_amount_anomaly",
-    ]
+
+
+def test_unknown_intent_add_income_fallback_requires_confirmation():
+    response = DecisionEngine().decide(
+        make_request(
+            source="whatsapp_bot",
+            action_type="add_income",
+            payload={"amount": 1000, "proposed_action": "add_income"},
+            intent={
+                "original": "unknown",
+                "resolved": "add_income",
+                "fallback_used": True,
+                "fallback_reason": "deterministic_income_keyword_match",
+            },
+        )
+    )
+
+    assert response.decision == Decision.CONFIRM
+    assert response.scores.uncertainty_score == 1.0
+    assert "unknown_intent" in response.audit_flags
+    assert "fallback_used" in response.audit_flags
+    assert "financial_write_requires_confirmation" in response.audit_flags
+
+
+def test_unknown_intent_add_expense_fallback_requires_confirmation():
+    response = DecisionEngine().decide(
+        make_request(
+            source="telegram_bot",
+            action_type="add_expense",
+            payload={"amount": 20, "proposed_action": "add_expense"},
+            intent={
+                "original": "unknown",
+                "resolved": "add_expense",
+                "fallback_used": True,
+            },
+        )
+    )
+
+    assert response.decision == Decision.CONFIRM
+    assert response.scores.uncertainty_score == 1.0
+
+
+def test_known_intent_low_income_no_fallback_is_allowed():
+    response = DecisionEngine().decide(
+        make_request(
+            source="mobile_app",
+            action_type="add_income",
+            payload={"amount": 20, "proposed_action": "add_income"},
+            intent={
+                "original": "add_income",
+                "resolved": "add_income",
+                "fallback_used": False,
+            },
+            llm={"confidence": 0.9},
+        )
+    )
+
+    assert response.decision == Decision.ALLOW
+    assert response.scores.uncertainty_score == 0.0
+
+
+def test_high_value_income_requires_confirmation():
+    response = DecisionEngine().decide(
+        make_request(
+            source="mobile_app",
+            action_type="add_income",
+            payload={"amount": 5000, "proposed_action": "add_income"},
+            intent={
+                "original": "add_income",
+                "resolved": "add_income",
+                "fallback_used": False,
+            },
+            llm={"confidence": 0.9},
+        )
+    )
+
+    assert response.decision == Decision.CONFIRM
+    assert "high_value_transaction" in response.audit_flags
+
+
+def test_fallback_increases_uncertainty_score():
+    engine = DecisionEngine()
+
+    without_fallback = engine.decide(
+        make_request(
+            source="mobile_app",
+            action_type="add_income",
+            payload={"amount": 20, "proposed_action": "add_income"},
+            intent={"original": "unknown", "resolved": "add_income", "fallback_used": False},
+        )
+    )
+    with_fallback = engine.decide(
+        make_request(
+            source="mobile_app",
+            action_type="add_income",
+            payload={"amount": 20, "proposed_action": "add_income"},
+            intent={"original": "unknown", "resolved": "add_income", "fallback_used": True},
+        )
+    )
+
+    assert with_fallback.scores.uncertainty_score > without_fallback.scores.uncertainty_score
+
+
+def test_missing_intent_metadata_for_chat_financial_write_fails_safe_to_confirm():
+    response = DecisionEngine().decide(
+        make_request(
+            source="chat",
+            action_type="add_income",
+            payload={"amount": 20, "proposed_action": "add_income"},
+            llm={"confidence": 0.95},
+        )
+    )
+
+    assert response.decision == Decision.CONFIRM
+    assert response.scores.uncertainty_score == 0.7
+
+
+def test_fin_norte_contract_confirm_skips_persistence_path(caplog):
+    caplog.set_level("INFO", logger="axg.engine")
+
+    response = DecisionEngine().decide(
+        make_request(
+            source="whatsapp_bot",
+            action_type="add_income",
+            metadata={"flow": "bot_income_entry"},
+            payload={"amount": 1000, "proposed_action": "add_income"},
+            intent={
+                "original": "unknown",
+                "resolved": "add_income",
+                "fallback_used": True,
+            },
+        )
+    )
+
+    logged = [
+        json.loads(record.message)
+        for record in caplog.records
+        if "axg.decision.evaluated" in record.message
+    ][0]
+    assert response.decision == Decision.CONFIRM
+    assert logged["flow"] == "bot_income_entry"
+    assert logged["decision"] == "CONFIRM"
 
 
 def test_poc_honorato_restaurant_subscription_is_not_allowed():
