@@ -1,93 +1,100 @@
 # AXG - Agent Execution Guard
 
-Safe execution control plane for AI agent decisions.
+Deterministic execution control for AI agent actions in real systems.
 
 > AI suggests. AXG decides.
 
-AXG sits between probabilistic agents and deterministic systems. It validates proposed actions before they become real writes, API calls, financial records, or operational truths.
+AXG sits between probabilistic AI interpretation and deterministic system writes. It evaluates risk, uncertainty, and policy constraints before any action is allowed to execute.
 
-## Mission
+## Why AXG Exists
 
-Build a deterministic execution guard for AI agents:
+AI agents are probabilistic by nature. Production systems are not.
 
-- validate agent identity and permissions
-- evaluate LLM confidence without calling an LLM
-- evaluate contextual risk
-- apply declarative policy rules
-- return `ALLOW`, `SUGGEST`, `CONFIRM`, or `BLOCK`
-- produce an auditable decision trace
+AXG is designed to prevent blind automation by enforcing deterministic decisions:
 
-## What AXG Is
+- **ALLOW**: safe to execute automatically
+- **SUGGEST**: provide recommendation but avoid silent execution
+- **CONFIRM**: require explicit human confirmation
+- **BLOCK**: deny execution based on policy/permission
 
-AXG is a control plane for agent execution.
+This pattern helps teams safely adopt AI in financial and operational workflows where mistakes are expensive.
 
-It is not:
+## Architecture Overview
+
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+
+Execution flow:
+
+```text
+Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+```
+
+Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
+
+## What AXG Is (and Is Not)
+
+AXG **is**:
+
+- a deterministic execution control plane
+- a policy/risk decision engine
+- an auditable guardrail layer for production workflows
+
+AXG is **not**:
 
 - an LLM wrapper
-- a prompt framework
-- an agent framework
-- a learning system
+- a prompt orchestration framework
+- an autonomous agent framework
+- a learning/retraining system
 
-## Flow
+## Core Capabilities
+
+- Validates execution context (`app_id`, `plugin_id`, source, action).
+- Supports agent identity and permission-based authorization.
+- Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+- Computes deterministic scoring:
+  - `llm_confidence`
+  - `final_confidence` (after penalties)
+  - `risk_score`
+  - `uncertainty_score`
+- Handles uncertain intent/fallback paths safely for financial write operations.
+- Returns a structured decision with:
+  - human-readable reason
+  - actionable payload
+  - audit flags
+  - triggered rules
+- Emits structured logs for request/decision tracing.
+- Fails safe to `CONFIRM` if plugin loading/validation fails.
+
+## Decision Flow (Deterministic)
+
+1. Load plugin by `plugin_id`.
+2. Evaluate declarative rules against request data.
+3. Compute confidence/risk/uncertainty scores.
+4. Apply fail-safe uncertainty gate for risky financial writes.
+5. Enforce action permissions.
+6. Apply strongest rule decision by precedence.
+7. Fallback to threshold-based decision when no rule applies.
+
+Decision precedence:
 
 ```text
-Agent / Bot / Tool
-  -> MUAI interpretation layer
-  -> AXG decision guard
-  -> Target system such as FinNorte
+BLOCK > CONFIRM > SUGGEST > ALLOW
 ```
 
-## Current Implementation
+## API
 
-Phase 1 is implemented:
-
-- deterministic decision engine
-- Pydantic input/output contracts
-- declarative JSON plugin loader
-- rule engine with simple operators
-- FinNorte plugin
-- FastAPI endpoint
-- Docker image support
-- GitHub Actions test/build pipeline
-- unit tests with 100% package coverage
-
-## Project Structure
-
-```text
-axg/
-  api.py              # FastAPI app
-  engine.py           # decision engine
-  models.py           # request/response/plugin schemas
-  plugin_loader.py    # JSON plugin loading and validation
-  rules.py            # deterministic rule evaluator
-plugins/
-  finnorte/
-    rules.json        # FinNorte policy plugin
-tests/
-  test_axg_core.py
-```
-
-## Decision API
-
-Start the API:
+Start locally:
 
 ```bash
 python -m uvicorn axg.api:app --reload
 ```
 
-Health:
+Endpoints:
 
-```http
-GET /health
-```
+- `GET /health`
+- `POST /v1/decisions`
 
-Decision:
-
-```http
-POST /v1/decisions
-```
-
-Example request:
+### Example Request
 
 ```json
 {
@@ -114,13 +121,19 @@ Example request:
     "confidence": 0.78,
     "raw_output": {}
   },
+  "intent": {
+    "original": "create_expense",
+    "resolved": "create_expense",
+    "fallback_used": false
+  },
   "metadata": {
-    "tenant_id": "tenant_001"
+    "tenant_id": "tenant_001",
+    "flow": "bot_expense_validation"
   }
 }
 ```
 
-Expected response:
+### Example Response
 
 ```json
 {
@@ -130,121 +143,145 @@ Expected response:
   "decision": "CONFIRM",
   "scores": {
     "llm_confidence": 0.78,
-    "final_confidence": 0.18,
-    "risk_score": 1.0
+    "final_confidence": 0.48,
+    "risk_score": 0.9,
+    "uncertainty_score": 0.0
   },
   "actionable_payload": {
     "proposed_action": "create_expense",
+    "merchant": "Uber",
+    "amount": 1500,
+    "currency": "EUR",
     "suggested_category": "Transport"
   },
-  "human_readable_reason": "High value anomaly: this Uber expense is unusually large and must be confirmed before execution. Bot-originated high-value expenses require explicit user confirmation.",
-  "audit_flags": ["high_value_anomaly", "transport_amount_anomaly", "bot_high_value"],
+  "human_readable_reason": "High-value anomaly requires confirmation before execution.",
+  "audit_flags": [
+    "high_value_transaction",
+    "requires_user_confirmation",
+    "merchant_amount_anomaly"
+  ],
   "rules_triggered": [
     {
       "id": "high_value_transport_anomaly",
       "decision": "CONFIRM",
-      "reason": "High value anomaly: this Uber expense is unusually large and must be confirmed before execution."
+      "reason": "High value anomaly: this expense is significantly higher than expected and must be confirmed."
     }
   ],
   "metadata": {
-    "tenant_id": "tenant_001"
+    "tenant_id": "tenant_001",
+    "flow": "bot_expense_validation"
   }
 }
 ```
 
-## Production Validation Cases
+## Plugin Model
 
-The first POC validates the flow:
+Plugins are JSON-only policies. No plugin runtime code is executed.
 
-```text
-Bank Sync / Bot -> MUAI -> AXG -> FinNorte
-```
-
-Covered cases:
-
-- `gastei 1500€ com Uber` -> `CONFIRM`
-- `gastei 15€ com Uber` -> `ALLOW`
-- `HONORATO PIZZA` misclassified as subscription -> `CONFIRM` or `SUGGEST`, never `ALLOW`
-- recurring condominium payment with stable pattern -> `ALLOW`
-
-The API accepts both early Phase 1 requests with `user_id` only and future Phase 2 requests with an explicit `agent` identity.
-
-## Plugin Rules
-
-Domain logic lives outside the core:
+Path convention:
 
 ```text
-plugins/finnorte/rules.json
+plugins/<plugin_id>/rules.json
 ```
 
 Supported operators:
 
-- `eq`
-- `neq`
-- `gt`
-- `gte`
-- `lt`
-- `lte`
-- `in`
-- `not_in`
+- `eq`, `neq`
+- `gt`, `gte`, `lt`, `lte`
+- `in`, `not_in`
 - `exists`
 - `contains`
 
-Supported condition groups:
+Condition groups:
 
 - `all`
 - `any`
 
-No plugin code is executed. Plugins are data only.
+## Production Validation Scenarios Covered
 
-## Fail-Safe Behavior
+Current tests and plugin behavior validate these scenarios:
 
-If a plugin is missing, invalid, or cannot be loaded:
+- High-value Uber expense from bot/chat paths -> `CONFIRM`
+- Normal expense with sufficient confidence -> `ALLOW`
+- Unknown intent + fallback on financial writes -> `CONFIRM`
+- Missing intent metadata on uncertain source for financial writes -> `CONFIRM`
+- Merchant/category mismatch for subscription-like detection -> `SUGGEST` or `CONFIRM` (never blind `ALLOW`)
+- Stable recurring condominium pattern -> `ALLOW`
+- Missing permissions for required action -> `BLOCK`
+- Unknown action in plugin -> `CONFIRM`
+- Missing/invalid plugin -> fail-safe `CONFIRM`
+
+## Project Structure
 
 ```text
-decision = CONFIRM
+axg/
+  api.py              # FastAPI app and request/response logging
+  engine.py           # deterministic decision orchestration
+  models.py           # Pydantic schemas and enums
+  plugin_loader.py    # plugin loading + schema validation
+  rules.py            # rule operator evaluation
+plugins/
+  finnorte/
+    rules.json        # FinNorte domain policy
+tests/
+  test_axg_core.py    # unit + API tests
 ```
 
-AXG never fails open to `ALLOW`.
+## Fail-Safe Principles
 
-## Testing
+- **Never fail open** to `ALLOW` on plugin/config issues.
+- Unknown/high-uncertainty financial writes require confirmation.
+- Permission failures produce deterministic `BLOCK`.
+- Every decision includes machine-readable and human-readable audit context.
 
-Install test dependencies, then run:
+## Local Development
+
+Install dependencies and run tests:
 
 ```bash
 python -m pytest --cov=axg --cov-report=term-missing
 ```
 
-Current result:
+Run API:
 
-```text
-28 passed
-100% coverage
+```bash
+python -m uvicorn axg.api:app --reload
 ```
 
 ## Roadmap
 
-Phase 1:
+### Phase 1 (implemented)
 
-- core decision engine
+- Deterministic core decision engine
 - FinNorte plugin
-- WhatsApp/Uber high-value validation
+- FastAPI decision endpoint
+- Structured audit logs
+- Unit/API test suite with full package coverage
 
-Phase 2:
+### Phase 2
 
-- stronger agent identity and token model
-- improved risk scoring
-- structured audit sinks
+- Stronger identity and token model
+- More expressive risk scoring profiles
+- Structured external audit sinks
 
-Phase 3:
+### Phase 3
 
-- plugin SDK
-- multi-domain plugin catalog
+- Plugin SDK
+- Multi-domain plugin catalog
 
-Phase 4:
+### Phase 4
 
-- AXG protocol formalization
+- AXG protocol formalization and interoperability profile
+
+## Contributing
+
+Contributions are welcome:
+
+- policy/risk rule improvements
+- documentation and examples
+- tests and edge-case scenarios
+- plugins for new domains
 
 ## License
 
-Apache 2.0
+Apache-2.0
