@@ -1,246 +1,250 @@
-🛡️ AXG — Agent Execution Guard
+# AXG - Agent Execution Guard
 
-«Safe execution layer for AI agents
-Control what agents can actually do — not just what they suggest.»
+Safe execution control plane for AI agent decisions.
 
----
+> AI suggests. AXG decides.
 
-🚨 The Problem
+AXG sits between probabilistic agents and deterministic systems. It validates proposed actions before they become real writes, API calls, financial records, or operational truths.
 
-AI agents are becoming powerful:
+## Mission
 
-- they understand natural language
-- they make decisions
-- they execute actions
+Build a deterministic execution guard for AI agents:
 
-But there is a fundamental issue:
+- validate agent identity and permissions
+- evaluate LLM confidence without calling an LLM
+- evaluate contextual risk
+- apply declarative policy rules
+- return `ALLOW`, `SUGGEST`, `CONFIRM`, or `BLOCK`
+- produce an auditable decision trace
 
-«Agents are probabilistic. Systems are deterministic.»
+## What AXG Is
 
-Without control, agents can:
+AXG is a control plane for agent execution.
 
-- execute incorrect financial operations
-- corrupt data silently
-- perform unintended actions
-- create legal and compliance risks
+It is not:
 
----
+- an LLM wrapper
+- a prompt framework
+- an agent framework
+- a learning system
 
-💡 The Solution
+## Flow
 
-AXG — Agent Execution Guard
+```text
+Agent / Bot / Tool
+  -> MUAI interpretation layer
+  -> AXG decision guard
+  -> Target system such as FinNorte
+```
 
-AXG is a control layer between AI agents and real-world systems.
+## Current Implementation
 
-It ensures that every action proposed by an agent is:
+Phase 1 is implemented:
 
-- validated
-- risk-assessed
-- authorized
-- auditable
+- deterministic decision engine
+- Pydantic input/output contracts
+- declarative JSON plugin loader
+- rule engine with simple operators
+- FinNorte plugin
+- FastAPI endpoint
+- Docker image support
+- GitHub Actions test/build pipeline
+- unit tests with 100% package coverage
 
----
+## Project Structure
 
-🧠 Core Principle
-
-«AI suggests. AXG decides.»
-
----
-
-🏗️ Architecture
-
-Agent (LLM / OpenClaw / Bot)
-↓
-MUAI (interpretation / orchestration)
-↓
-AXG (decision guard)
-↓
-Target System (FinNorte, APIs, databases)
-
----
-
-🔄 Execution Flow
-
-User input
-↓
-MUAI extracts intent (LLM)
-↓
-AXG validates:
-  - identity
-  - permissions
-  - confidence
-  - risk
-  - policy rules
-↓
-AXG decision:
-  ALLOW / SUGGEST / CONFIRM / BLOCK
-↓
-System executes or requests confirmation
-
----
-
-🧪 Real Example
-
-Input (WhatsApp)
-
-"gastei 1500€ com Uber"
-
----
-
-MUAI Output
-
-{
-  "action": "create_expense",
-  "amount": 1500,
-  "category": "Transport",
-  "confidence": 0.78
-}
-
----
-
-AXG Decision
-
-{
-  "decision": "CONFIRM",
-  "reason": "Amount significantly exceeds user's normal behavior.",
-  "risk_score": 0.85,
-  "confidence_score": 0.42
-}
-
----
-
-Result
-
-«The system asks for user confirmation before executing.»
-
----
-
-🧩 What AXG Does
-
-🔐 Agent Identity & Permissions
-
-- Who is the agent?
-- What is it allowed to do?
-
----
-
-🧠 Decision Validation
-
-- evaluates model confidence
-- checks contextual consistency
-- applies domain rules
-
----
-
-⚠️ Risk Assessment
-
-- financial impact
-- anomaly detection
-- action sensitivity
-
----
-
-🛡️ Execution Control
-
-Decision| Description
-ALLOW| Execute automatically
-SUGGEST| Suggest to user
-CONFIRM| Require explicit approval
-BLOCK| Deny execution
-
----
-
-📜 Auditability
-
-Every decision is:
-
-- explainable
-- traceable
-- reproducible
-
----
-
-🔌 Plugin-Based Policy System
-
-AXG is domain-agnostic.
-
-Policies are defined via plugins:
-
-/plugins
+```text
+axg/
+  api.py              # FastAPI app
+  engine.py           # decision engine
+  models.py           # request/response/plugin schemas
+  plugin_loader.py    # JSON plugin loading and validation
+  rules.py            # deterministic rule evaluator
+plugins/
   finnorte/
-  social-intent/
+    rules.json        # FinNorte policy plugin
+tests/
+  test_axg_core.py
+```
 
----
+## Decision API
 
-🔗 Real-World Validation
+Start the API:
 
-AXG is being validated in real applications:
+```bash
+python -m uvicorn axg.api:app --reload
+```
 
-- FinNorte → financial AI system
-- Social Intent → conversational automation
-- MUAI → multi-agent orchestration layer
+Health:
 
----
+```http
+GET /health
+```
 
-🔄 Integration Example
+Decision:
 
-WhatsApp → MUAI → AXG → FinNorte
+```http
+POST /v1/decisions
+```
 
----
+Example request:
 
-🎯 Use Cases
+```json
+{
+  "execution_id": "exec_001",
+  "app_id": "finnorte",
+  "plugin_id": "finnorte",
+  "agent": {
+    "id": "muai_whatsapp",
+    "type": "service",
+    "permissions": ["expense:create"]
+  },
+  "source": "whatsapp",
+  "action_type": "create_expense",
+  "payload": {
+    "merchant": "Uber",
+    "amount": 1500,
+    "currency": "EUR",
+    "proposed_action": "create_expense",
+    "proposed_category": "Transport"
+  },
+  "context": {},
+  "llm": {
+    "model": "llama-3.3-70b",
+    "confidence": 0.78,
+    "raw_output": {}
+  },
+  "metadata": {
+    "tenant_id": "tenant_001"
+  }
+}
+```
 
-- financial agents
-- AI copilots with write access
-- autonomous workflows
-- enterprise automation
-- multi-agent systems
+Expected response:
 
----
+```json
+{
+  "schema_version": "axg.decision.v1",
+  "execution_id": "exec_001",
+  "plugin_version": "finnorte@0.1.0",
+  "decision": "CONFIRM",
+  "scores": {
+    "llm_confidence": 0.78,
+    "final_confidence": 0.18,
+    "risk_score": 1.0
+  },
+  "actionable_payload": {
+    "proposed_action": "create_expense",
+    "suggested_category": "Transport"
+  },
+  "human_readable_reason": "High value anomaly: this Uber expense is unusually large and must be confirmed before execution. Bot-originated high-value expenses require explicit user confirmation.",
+  "audit_flags": ["high_value_anomaly", "transport_amount_anomaly", "bot_high_value"],
+  "rules_triggered": [
+    {
+      "id": "high_value_transport_anomaly",
+      "decision": "CONFIRM",
+      "reason": "High value anomaly: this Uber expense is unusually large and must be confirmed before execution."
+    }
+  ],
+  "metadata": {
+    "tenant_id": "tenant_001"
+  }
+}
+```
 
-🚀 Why AXG Matters
+## Production Validation Cases
 
-Companies will not adopt AI agents at scale without:
+The first POC validates the flow:
 
-- control
-- safety
-- auditability
+```text
+Bank Sync / Bot -> MUAI -> AXG -> FinNorte
+```
 
-AXG provides the missing layer between:
+Covered cases:
 
-«AI capability and real-world execution»
+- `gastei 1500€ com Uber` -> `CONFIRM`
+- `gastei 15€ com Uber` -> `ALLOW`
+- `HONORATO PIZZA` misclassified as subscription -> `CONFIRM` or `SUGGEST`, never `ALLOW`
+- recurring condominium payment with stable pattern -> `ALLOW`
 
----
+The API accepts both early Phase 1 requests with `user_id` only and future Phase 2 requests with an explicit `agent` identity.
 
-🧭 Roadmap
+## Plugin Rules
 
-- [x] Decision Guard concept
-- [x] FinNorte validation
-- [ ] Agent identity & token model
-- [ ] Plugin SDK
-- [ ] Multi-agent communication
-- [ ] Open protocol definition
+Domain logic lives outside the core:
 
----
+```text
+plugins/finnorte/rules.json
+```
 
-🔓 Open Source Vision
+Supported operators:
 
-«Autonomous systems must be accountable.»
+- `eq`
+- `neq`
+- `gt`
+- `gte`
+- `lt`
+- `lte`
+- `in`
+- `not_in`
+- `exists`
+- `contains`
 
-AXG aims to enable:
+Supported condition groups:
 
-- safe agent ecosystems
-- trusted automation
-- production-ready AI systems
+- `all`
+- `any`
 
----
+No plugin code is executed. Plugins are data only.
 
-📌 Status
+## Fail-Safe Behavior
 
-Early-stage, production-backed proof of concept.
+If a plugin is missing, invalid, or cannot be loaded:
 
----
+```text
+decision = CONFIRM
+```
 
-📄 License
+AXG never fails open to `ALLOW`.
+
+## Testing
+
+Install test dependencies, then run:
+
+```bash
+python -m pytest --cov=axg --cov-report=term-missing
+```
+
+Current result:
+
+```text
+28 passed
+100% coverage
+```
+
+## Roadmap
+
+Phase 1:
+
+- core decision engine
+- FinNorte plugin
+- WhatsApp/Uber high-value validation
+
+Phase 2:
+
+- stronger agent identity and token model
+- improved risk scoring
+- structured audit sinks
+
+Phase 3:
+
+- plugin SDK
+- multi-domain plugin catalog
+
+Phase 4:
+
+- AXG protocol formalization
+
+## License
 
 Apache 2.0

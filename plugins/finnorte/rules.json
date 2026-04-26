@@ -1,0 +1,202 @@
+{
+  "plugin": "finnorte",
+  "version": "0.1.0",
+  "domain": "finance",
+  "thresholds": {
+    "allow_min_confidence": 0.85,
+    "suggest_min_confidence": 0.65,
+    "high_risk_threshold": 0.7
+  },
+  "actions": {
+    "create_expense": {
+      "base_risk": 0.45
+    },
+    "categorize_transaction": {
+      "base_risk": 0.25
+    },
+    "detect_subscription": {
+      "base_risk": 0.5
+    }
+  },
+  "rules": [
+    {
+      "id": "high_value_transaction",
+      "description": "High-value expenses require confirmation before persistence.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.amount",
+            "operator": "gte",
+            "value": 1000
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "This transaction has a high financial value and requires user confirmation before saving.",
+      "confidence_penalty": 0.15,
+      "risk_delta": 0.2,
+      "audit_flags": ["high_value_transaction", "requires_user_confirmation"]
+    },
+    {
+      "id": "merchant_amount_anomaly",
+      "description": "Merchant amount anomalies require confirmation.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.merchant",
+            "operator": "contains",
+            "value": "uber"
+          },
+          {
+            "field": "payload.amount",
+            "operator": "gte",
+            "value": 1000
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving.",
+      "confidence_penalty": 0.15,
+      "risk_delta": 0.25,
+      "audit_flags": ["merchant_amount_anomaly"]
+    },
+    {
+      "id": "restaurant_not_subscription",
+      "description": "Restaurants must not be automatically detected as subscriptions.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.merchant_type",
+            "operator": "eq",
+            "value": "restaurant"
+          },
+          {
+            "field": "payload.proposed_action",
+            "operator": "eq",
+            "value": "detect_subscription"
+          }
+        ]
+      },
+      "decision": "SUGGEST",
+      "reason": "The AI suggested this transaction as a subscription, but the merchant appears to be a restaurant.",
+      "confidence_penalty": 0.25,
+      "risk_delta": 0.2,
+      "actionable_payload": {
+        "is_subscription": false,
+        "suggested_category": "Food & Dining"
+      },
+      "audit_flags": ["merchant_type_incompatible_with_subscription", "llm_confidence_overridden"]
+    },
+    {
+      "id": "subscription_requires_history",
+      "description": "Subscription detection requires enough historical occurrences.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.proposed_action",
+            "operator": "eq",
+            "value": "detect_subscription"
+          },
+          {
+            "field": "context.merchant_history_count",
+            "operator": "lt",
+            "value": 3
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "Subscription detection requires at least three historical merchant occurrences.",
+      "confidence_penalty": 0.2,
+      "risk_delta": 0.15,
+      "actionable_payload": {
+        "is_subscription": false
+      },
+      "audit_flags": ["insufficient_subscription_history"]
+    },
+    {
+      "id": "subscription_requires_recurrence_pattern",
+      "description": "Subscription detection requires a temporal recurrence signal.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.proposed_action",
+            "operator": "eq",
+            "value": "detect_subscription"
+          },
+          {
+            "field": "context.recurrence_pattern",
+            "operator": "neq",
+            "value": true
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "There is no recurring payment pattern.",
+      "confidence_penalty": 0.2,
+      "risk_delta": 0.15,
+      "actionable_payload": {
+        "is_subscription": false
+      },
+      "audit_flags": ["missing_recurrence_pattern"]
+    },
+    {
+      "id": "confirmed_recurring_subscription",
+      "description": "Known recurring payments with stable amount and user confirmation may be applied automatically.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.proposed_action",
+            "operator": "eq",
+            "value": "detect_subscription"
+          },
+          {
+            "field": "context.merchant_history_count",
+            "operator": "gte",
+            "value": 3
+          },
+          {
+            "field": "context.recurrence_pattern",
+            "operator": "eq",
+            "value": true
+          },
+          {
+            "field": "context.amount_variance_percent",
+            "operator": "lte",
+            "value": 5
+          },
+          {
+            "field": "context.previous_user_confirmed_category",
+            "operator": "exists"
+          }
+        ]
+      },
+      "decision": "ALLOW",
+      "reason": "The transaction has recurring evidence, stable amount and previous user confirmation.",
+      "confidence_penalty": 0.0,
+      "risk_delta": 0.0,
+      "actionable_payload": {
+        "suggested_category": "Housing",
+        "is_subscription": true
+      },
+      "audit_flags": ["confirmed_recurring_subscription"]
+    },
+    {
+      "id": "low_confidence_requires_confirmation",
+      "description": "Low LLM confidence requires confirmation.",
+      "condition": {
+        "all": [
+          {
+            "field": "llm.confidence",
+            "operator": "lt",
+            "value": 0.65
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "The model confidence is too low for automatic execution.",
+      "confidence_penalty": 0.25,
+      "risk_delta": 0.2,
+      "audit_flags": ["low_confidence"]
+    }
+  ]
+}
