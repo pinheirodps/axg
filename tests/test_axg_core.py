@@ -515,7 +515,7 @@ def test_api_health_and_decision_endpoint():
 
 
 def test_api_logs_decision_request(caplog):
-    caplog.set_level("INFO", logger="axg.api")
+    caplog.set_level("INFO", logger="uvicorn.error")
     client = TestClient(app)
 
     response = client.post(
@@ -526,13 +526,20 @@ def test_api_logs_decision_request(caplog):
         ),
     )
 
-    logged = [
+    request_logged = [
         json.loads(record.message)
         for record in caplog.records
         if "axg.decision.request_received" in record.message
     ][0]
+    response_logged = [
+        json.loads(record.message)
+        for record in caplog.records
+        if "axg.decision.response_emitted" in record.message
+    ][0]
     assert response.status_code == 200
-    assert logged["service"] == "axg"
-    assert logged["component"] == "api"
-    assert logged["flow"] == "bank_sync_categorization"
-    assert logged["execution_id"] == "test_exec_api_log"
+    assert request_logged["service"] == "axg"
+    assert request_logged["component"] == "api"
+    assert request_logged["flow"] == "bank_sync_categorization"
+    assert request_logged["execution_id"] == "test_exec_api_log"
+    assert response_logged["event"] == "axg.decision.response_emitted"
+    assert response_logged["execution_id"] == "test_exec_api_log"
