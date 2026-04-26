@@ -74,6 +74,8 @@ class DecisionEngine:
             decisions.append(permission_decision)
         if decisions:
             return max(decisions, key=lambda decision: DECISION_PRECEDENCE[decision])
+        if request.action_type not in plugin.actions:
+            return Decision.CONFIRM
 
         if request.llm.confidence >= plugin.thresholds.allow_min_confidence:
             return Decision.ALLOW
@@ -86,7 +88,7 @@ class DecisionEngine:
     ) -> Decision | None:
         policy = plugin.actions.get(request.action_type)
         if not policy:
-            return Decision.CONFIRM
+            return None
         missing_permissions = [
             permission
             for permission in policy.required_permissions
