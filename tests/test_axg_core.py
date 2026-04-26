@@ -6,7 +6,14 @@ from fastapi.testclient import TestClient
 
 from axg.api import app
 from axg.engine import DecisionEngine
-from axg.models import ConditionGroup, Decision, DecisionRequest, Plugin, PolicyRule, RuleCondition
+from axg.models import (
+    ConditionGroup,
+    Decision,
+    DecisionRequest,
+    Plugin,
+    PolicyRule,
+    RuleCondition,
+)
 from axg.plugin_loader import PluginLoadError, PluginLoader
 from axg.rules import RuleEngine
 
@@ -20,7 +27,11 @@ def request_data(**overrides):
         "agent": {
             "id": "muai_whatsapp",
             "type": "service",
-            "permissions": ["expense:create", "transaction:categorize", "subscription:detect"],
+            "permissions": [
+                "expense:create",
+                "transaction:categorize",
+                "subscription:detect",
+            ],
         },
         "source": "whatsapp",
         "action_type": "create_expense",
@@ -93,7 +104,8 @@ def plugin_from_rules(rules, actions=None):
             "plugin": "test",
             "version": "0.1.0",
             "domain": "test",
-            "actions": actions or {"create_expense": {"required_permissions": [], "base_risk": 0.2}},
+            "actions": actions
+            or {"create_expense": {"required_permissions": [], "base_risk": 0.2}},
             "rules": rules,
         }
     )
@@ -151,7 +163,9 @@ def test_rule_engine_any_all_missing_invalid_and_contains_list():
         ],
     )
 
-    assert engine.evaluate_group(group, {"payload": {"amount": 15}, "source": "whatsapp"})
+    assert engine.evaluate_group(
+        group, {"payload": {"amount": 15}, "source": "whatsapp"}
+    )
     assert not engine.evaluate_condition(
         RuleCondition(field="payload.missing", operator="eq", value=1),
         {"payload": {}},
@@ -193,6 +207,39 @@ def test_uber_1500_whatsapp_requires_confirmation():
     assert "significantly higher" in response.human_readable_reason
     assert response.scores.risk_score == 0.9
     assert response.scores.final_confidence == 0.48
+
+
+def test_decision_log_is_structured_for_flow_debugging(caplog):
+    caplog.set_level("INFO", logger="axg.engine")
+
+    response = DecisionEngine().decide(
+        make_request(
+            execution_id="test_exec_uber_1500_001",
+            metadata={
+                "tenant_id": "test_tenant_001",
+                "flow": "bot_expense_validation",
+                "situation": "uber_high_value_expense",
+            },
+            payload={"merchant": "Uber", "amount": 1500},
+        )
+    )
+
+    logged = [
+        json.loads(record.message)
+        for record in caplog.records
+        if "axg.decision.evaluated" in record.message
+    ][0]
+    assert response.decision == Decision.CONFIRM
+    assert logged["service"] == "axg"
+    assert logged["flow"] == "bot_expense_validation"
+    assert logged["situation"] == "uber_high_value_expense"
+    assert logged["execution_id"] == "test_exec_uber_1500_001"
+    assert logged["decision"] == "CONFIRM"
+    assert logged["audit_flags"] == [
+        "high_value_transaction",
+        "requires_user_confirmation",
+        "merchant_amount_anomaly",
+    ]
 
 
 def test_poc_uber_1500_contract_without_agent_requires_confirmation():
@@ -341,16 +388,26 @@ def test_missing_permission_blocks():
         loader=StaticLoader(
             plugin_from_rules(
                 [],
-                actions={"create_expense": {"required_permissions": ["expense:create"], "base_risk": 0.2}},
+                actions={
+                    "create_expense": {
+                        "required_permissions": ["expense:create"],
+                        "base_risk": 0.2,
+                    }
+                },
             )
         )
     )
 
     response = engine.decide(
-        make_request(plugin_id="test", agent={"id": "agent_without_access", "permissions": []})
+        make_request(
+            plugin_id="test", agent={"id": "agent_without_access", "permissions": []}
+        )
     )
     assert response.decision == Decision.BLOCK
-    assert response.human_readable_reason == "The proposed action is not permitted for this agent."
+    assert (
+        response.human_readable_reason
+        == "The proposed action is not permitted for this agent."
+    )
 
 
 def test_missing_agent_blocks_when_permission_is_required():
@@ -358,7 +415,12 @@ def test_missing_agent_blocks_when_permission_is_required():
         loader=StaticLoader(
             plugin_from_rules(
                 [],
-                actions={"create_expense": {"required_permissions": ["expense:create"], "base_risk": 0.2}},
+                actions={
+                    "create_expense": {
+                        "required_permissions": ["expense:create"],
+                        "base_risk": 0.2,
+                    }
+                },
             )
         )
     )
@@ -383,7 +445,10 @@ def test_low_confidence_without_matching_rules_confirms():
     response = engine.decide(make_request(plugin_id="test", llm={"confidence": 0.5}))
 
     assert response.decision == Decision.CONFIRM
-    assert response.human_readable_reason == "The proposal requires confirmation before execution."
+    assert (
+        response.human_readable_reason
+        == "The proposal requires confirmation before execution."
+    )
 
 
 def test_decision_precedence_block_wins():
@@ -391,14 +456,18 @@ def test_decision_precedence_block_wins():
         {
             "id": "confirm_rule",
             "description": "confirm",
-            "condition": {"all": [{"field": "payload.amount", "operator": "gt", "value": 1}]},
+            "condition": {
+                "all": [{"field": "payload.amount", "operator": "gt", "value": 1}]
+            },
             "decision": "CONFIRM",
             "reason": "confirm",
         },
         {
             "id": "block_rule",
             "description": "block",
-            "condition": {"all": [{"field": "payload.amount", "operator": "gt", "value": 1}]},
+            "condition": {
+                "all": [{"field": "payload.amount", "operator": "gt", "value": 1}]
+            },
             "decision": "BLOCK",
             "reason": "block",
         },
@@ -443,3 +512,27 @@ def test_api_health_and_decision_endpoint():
 
     assert response.status_code == 200
     assert response.json()["decision"] == "CONFIRM"
+
+
+def test_api_logs_decision_request(caplog):
+    caplog.set_level("INFO", logger="axg.api")
+    client = TestClient(app)
+
+    response = client.post(
+        "/v1/decisions",
+        json=request_data(
+            execution_id="test_exec_api_log",
+            metadata={"tenant_id": "tenant_001", "flow": "bank_sync_categorization"},
+        ),
+    )
+
+    logged = [
+        json.loads(record.message)
+        for record in caplog.records
+        if "axg.decision.request_received" in record.message
+    ][0]
+    assert response.status_code == 200
+    assert logged["service"] == "axg"
+    assert logged["component"] == "api"
+    assert logged["flow"] == "bank_sync_categorization"
+    assert logged["execution_id"] == "test_exec_api_log"
