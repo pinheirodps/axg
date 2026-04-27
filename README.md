@@ -21,12 +21,14 @@ This pattern helps teams safely adopt AI in financial and operational workflows 
 
 ## Architecture Overview
 
-![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.png)
+![MUAI, OpenClaw and AXG control flow](docs/images/muai-axg-openclaw-control-flow.svg)
+
+In the broader ecosystem, MUAI is the gateway for AI capabilities and model fallback. OpenClaw can run as an agent capability behind MUAI, but it does not execute real-world changes directly. AXG remains the deterministic gate before writes, external actions, or operational truth updates.
 
 Execution flow:
 
 ```text
-Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+App/Bot/Tool -> MUAI (intent + capabilities) -> AXG (execution guard) -> Core system write path
 ```
 
 Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
