@@ -646,6 +646,64 @@ def test_api_health_and_decision_endpoint():
     assert response.json()["decision"] == "CONFIRM"
 
 
+def test_api_get_certs() -> None:
+    client = TestClient(app)
+    response = client.get("/v1/certs")
+    assert response.status_code == 200
+    data = response.json()
+    assert "public_key" in data
+    assert "kid" in data
+    assert "alg" in data
+    assert data["kid"] == "axg-key-001"
+    assert data["alg"] == "RS256"
+    assert "BEGIN PUBLIC KEY" in data["public_key"]
+
+
+def test_api_plugins_reload(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+    # Ensure AXG_ADMIN_TOKEN is NOT set
+    monkeypatch.delenv("AXG_ADMIN_TOKEN", raising=False)
+    response = client.post("/v1/plugins/reload")
+    # Fail closed: should be 401
+    assert response.status_code == 401
+
+def test_api_decisions_token_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    from axg import engine
+    client = TestClient(app)
+    
+    def mock_sign(*args, **kwargs):
+        raise Exception("Mock sign error")
+        
+    monkeypatch.setattr(engine, "sign_decision", mock_sign)
+    response = client.post("/v1/decisions", json=request_data(payload={"amount": 15}))
+    
+    # Should NOT crash with 500
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "CONFIRM"
+    # Token should be omitted (or null)
+    assert data.get("decision_token") is None
+    assert "decision_token_signing_failed" in data["audit_flags"]
+    assert "could not issue a decision token" in data["human_readable_reason"]
+
+
+def test_api_plugins_reload_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = TestClient(app)
+    monkeypatch.setenv("AXG_ADMIN_TOKEN", "super-secret-admin")
+    
+    # Missing header
+    response = client.post("/v1/plugins/reload")
+    assert response.status_code == 401
+    
+    # Wrong header
+    response = client.post("/v1/plugins/reload", headers={"Authorization": "Bearer wrong-token"})
+    assert response.status_code == 401
+    
+    # Correct header
+    response = client.post("/v1/plugins/reload", headers={"Authorization": "Bearer super-secret-admin"})
+    assert response.status_code == 200
+
+
 def test_api_logs_decision_request(caplog):
     caplog.set_level("INFO", logger="uvicorn.error")
     client = TestClient(app)
