@@ -16,6 +16,7 @@ from axg.models import (
 )
 from axg.plugin_loader import PluginLoader, PluginLoadError
 from axg.rules import RuleEngine
+from axg.crypto import sign_decision
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +59,38 @@ class DecisionEngine:
         scores = self._scores(plugin, request, triggered_rules)
         decision = self._final_decision(plugin, request, triggered_rules, scores)
         audit_flags = self._audit_flags(triggered_rules, request, scores)
+        actionable_payload = self._actionable_payload(request, triggered_rules)
+        token_signing_failed = False
+        try:
+            decision_token = sign_decision(
+                execution_id=request.execution_id,
+                app_id=request.app_id,
+                decision=decision.value,
+                action_type=request.action_type,
+                actionable_payload=actionable_payload
+            )
+        except Exception as exc:
+            logger.error("AXG failed to generate decision token: %s", str(exc))
+            decision_token = None
+            token_signing_failed = True
+            audit_flags.append("decision_token_signing_failed")
+            if DECISION_PRECEDENCE[decision] < DECISION_PRECEDENCE[Decision.CONFIRM]:
+                decision = Decision.CONFIRM
+
+        reason = (
+            "AXG could not issue a decision token. Confirmation is required before execution."
+            if token_signing_failed and decision != Decision.BLOCK
+            else self._reason(decision, triggered_rules, request, scores)
+        )
+
         response = DecisionResponse(
             execution_id=request.execution_id,
             plugin_version=plugin.version_label,
             decision=decision,
+            decision_token=decision_token,
             scores=scores,
-            actionable_payload=self._actionable_payload(request, triggered_rules),
-            human_readable_reason=self._reason(decision, triggered_rules, request, scores),
+            actionable_payload=actionable_payload,
+            human_readable_reason=reason,
             audit_flags=audit_flags,
             rules_triggered=[
                 TriggeredRule(id=rule.id, decision=rule.decision, reason=rule.reason)
@@ -72,7 +98,7 @@ class DecisionEngine:
             ],
             metadata=request.metadata,
         )
-        logger.info(json.dumps(self._decision_log(request, response), sort_keys=True))
+        logger.info(json.dumps(self.get_decision_log(request, response), sort_keys=True))
         return response
 
     def _final_decision(
@@ -224,11 +250,11 @@ class DecisionEngine:
             metadata=request.metadata,
         )
         logger.warning(
-            json.dumps(self._decision_log(request, response), sort_keys=True)
+            json.dumps(self.get_decision_log(request, response), sort_keys=True)
         )
         return response
 
-    def _decision_log(
+    def get_decision_log(
         self, request: DecisionRequest, response: DecisionResponse
     ) -> dict[str, Any]:
         audit_flags = response.audit_flags
