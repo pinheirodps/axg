@@ -53,6 +53,10 @@ AXG is **not**:
 - Validates execution context (`app_id`, `plugin_id`, source, action).
 - Supports agent identity and permission-based authorization.
 - Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+- Issues short-lived cryptographic Decision Tokens for `ALLOW` decisions.
+- Exposes public verification material through `/v1/certs`.
+- Supports file and webhook audit sinks for external audit pipelines.
+- Provides a CLI for plugin validation and local decision simulation.
 - Computes deterministic scoring:
   - `llm_confidence`
   - `final_confidence` (after penalties)
@@ -66,6 +70,63 @@ AXG is **not**:
   - triggered rules
 - Emits structured logs for request/decision tracing.
 - Fails safe to `CONFIRM` if plugin loading/validation fails.
+- Fails safe to `CONFIRM` if decision token signing fails.
+
+## AXG Passport
+
+AXG Passport is the first step toward making AXG a cryptographic trust layer for autonomous actions.
+
+The goal is to reduce client-side bypass:
+
+> AXG evaluates and signs. The consumer backend verifies before execution.
+
+When AXG returns an `ALLOW` decision, it can include a short-lived JWT `decision_token` signed with RS256. Consumer systems, such as FinNorte, validate that token before trusting an AI-proposed action.
+
+The token includes:
+
+- `iss`: AXG issuer (`axg-engine`)
+- `sub`: execution id
+- `aud`: target app/consumer
+- `iat` and `exp`: short TTL to reduce replay risk
+- `decision`: expected to be `ALLOW` for automatic execution
+- `action_type`: the authorized action
+- `payload_hash`: deterministic SHA-256 hash of the actionable payload
+
+This means a token approved for a 15 EUR Uber expense cannot be reused to persist a 1500 EUR transaction or a different action type.
+
+### Passport Flow
+
+```text
+Agent / Bot / App
+  -> MUAI interprets intent
+  -> AXG evaluates policy and signs ALLOW decisions
+  -> Consumer backend verifies Passport token
+  -> System writes only if verification passes
+```
+
+Current FinNorte integration runs Passport verification in shadow mode for bank import categorization. Shadow mode validates and logs the token without blocking production writes yet. This lets the system prove reliability before moving to hard enforcement.
+
+### Key Management
+
+AXG uses asymmetric keys:
+
+- `AXG_PRIVATE_KEY`: only AXG uses this to sign decision tokens.
+- `AXG_PUBLIC_KEY`: consumers use this to verify decision tokens.
+
+Both values support escaped newlines (`\n`) for `.env` and GitHub Actions secrets.
+
+If no keys are configured, AXG generates ephemeral local-development keys at startup. This is useful for tests and local demos, but production should always inject stable rotated keys.
+
+### Fail-Safe Signing
+
+If token signing fails, AXG does not return an automatic `ALLOW`.
+
+Instead it:
+
+- returns `decision_token: null`;
+- downgrades the decision to `CONFIRM` when needed;
+- adds `decision_token_signing_failed` to `audit_flags`;
+- returns a human-readable reason explaining that automatic execution cannot be authorized.
 
 ## Decision Flow (Deterministic)
 
@@ -76,6 +137,7 @@ AXG is **not**:
 5. Enforce action permissions.
 6. Apply strongest rule decision by precedence.
 7. Fallback to threshold-based decision when no rule applies.
+8. Sign the actionable payload when the final decision can be automatically authorized.
 
 Decision precedence:
 
@@ -95,6 +157,10 @@ Endpoints:
 
 - `GET /health`
 - `POST /v1/decisions`
+- `GET /v1/certs`
+- `POST /v1/plugins/reload`
+
+`/v1/plugins/reload` is an administrative endpoint. It fails closed unless `AXG_ADMIN_TOKEN` is configured and the caller sends `Authorization: Bearer <token>`.
 
 ### Example Request
 
@@ -143,6 +209,7 @@ Endpoints:
   "execution_id": "exec_001",
   "plugin_version": "finnorte@0.1.0",
   "decision": "CONFIRM",
+  "decision_token": null,
   "scores": {
     "llm_confidence": 0.78,
     "final_confidence": 0.48,
@@ -176,6 +243,16 @@ Endpoints:
 }
 ```
 
+### Example Certificate Response
+
+```json
+{
+  "public_key": "-----BEGIN PUBLIC KEY-----\\n...\\n-----END PUBLIC KEY-----\\n",
+  "kid": "axg-key-001",
+  "alg": "RS256"
+}
+```
+
 ## Plugin Model
 
 Plugins are JSON-only policies. No plugin runtime code is executed.
@@ -199,6 +276,54 @@ Condition groups:
 - `all`
 - `any`
 
+## CLI
+
+AXG ships with a small CLI for local validation and simulation.
+
+Validate a plugin:
+
+```bash
+axg validate-plugin --id finnorte --dir .
+```
+
+Simulate a decision:
+
+```bash
+axg simulate-decision --plugin finnorte --payload ./examples/request.json --dir .
+```
+
+The CLI is intentionally small. It exists to make plugins easier to test before deployment, not to become a full control plane.
+
+## Audit Sinks
+
+AXG always emits structured decision logs. It can also send audit records to optional sinks:
+
+- `AXG_AUDIT_FILE`: append decisions as JSON lines to a local file.
+- `AXG_AUDIT_WEBHOOK`: send decisions to an external HTTP endpoint.
+- `AXG_AUDIT_WEBHOOK_TOKEN`: optional bearer token for webhook delivery.
+
+Audit delivery runs in the FastAPI background task path and should not block decision latency.
+
+For local webhook testing:
+
+```bash
+python scripts/webhook_listener.py --port 9999
+```
+
+## Configuration
+
+Important environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | API port, defaults to the runtime server configuration. |
+| `AXG_PRIVATE_KEY` | RS256 private key used to sign Passport tokens. |
+| `AXG_PUBLIC_KEY` | Public key exposed to consumers for verification. |
+| `AXG_ADMIN_TOKEN` | Enables authenticated plugin reload. Missing token means reload fails closed. |
+| `AXG_AUDIT_FILE` | Optional JSONL audit output path. |
+| `AXG_AUDIT_WEBHOOK` | Optional audit webhook URL. |
+| `AXG_AUDIT_WEBHOOK_TOKEN` | Optional audit webhook bearer token. |
+
 ## Production Validation Scenarios Covered
 
 Current tests and plugin behavior validate these scenarios:
@@ -212,12 +337,18 @@ Current tests and plugin behavior validate these scenarios:
 - Missing permissions for required action -> `BLOCK`
 - Unknown action in plugin -> `CONFIRM`
 - Missing/invalid plugin -> fail-safe `CONFIRM`
+- Passport signing failure -> fail-safe `CONFIRM`
+- Private-key-only deployment mode -> public key is derived and verifiable
+- Plugin reload without admin token -> fail-closed `401`
 
 ## Project Structure
 
 ```text
 axg/
   api.py              # FastAPI app and request/response logging
+  audit.py            # file/webhook audit sinks
+  cli.py              # plugin validation and decision simulation CLI
+  crypto.py           # RS256 Passport token signing and payload hashing
   engine.py           # deterministic decision orchestration
   models.py           # Pydantic schemas and enums
   plugin_loader.py    # plugin loading + schema validation
@@ -225,8 +356,13 @@ axg/
 plugins/
   finnorte/
     rules.json        # FinNorte domain policy
+scripts/
+  webhook_listener.py # local audit webhook lab
 tests/
-  test_axg_core.py    # unit + API tests
+  test_audit.py       # audit sink tests
+  test_axg_core.py    # engine + API tests
+  test_cli.py         # CLI tests
+  test_crypto.py      # Passport crypto tests
 ```
 
 ## Fail-Safe Principles
@@ -234,6 +370,8 @@ tests/
 - **Never fail open** to `ALLOW` on plugin/config issues.
 - Unknown/high-uncertainty financial writes require confirmation.
 - Permission failures produce deterministic `BLOCK`.
+- Signing failures produce deterministic `CONFIRM` or safer.
+- Admin operations fail closed when not configured.
 - Every decision includes machine-readable and human-readable audit context.
 
 ## Local Development
@@ -241,7 +379,8 @@ tests/
 Install dependencies and run tests:
 
 ```bash
-python -m pytest --cov=axg --cov-report=term-missing
+pip install -e ".[test]"
+python -m pytest --cov=axg --cov-report=term-missing --cov-fail-under=100
 ```
 
 Run API:
@@ -259,21 +398,28 @@ python -m uvicorn axg.api:app --reload
 - FastAPI decision endpoint
 - Structured audit logs
 - Unit/API test suite with full package coverage
+- AXG Passport JWT signing
+- Public cert endpoint
+- CLI plugin validation/simulation
+- File/webhook audit sinks
 
-### Phase 2
+### Phase 2 (next)
 
-- Stronger identity and token model
-- More expressive risk scoring profiles
-- Structured external audit sinks
+- Consumer SDKs for Node and Python
+- JWKS-style key rotation
+- Stronger agent identity and scopes
+- Enforcement mode in selected backend write paths
 
 ### Phase 3
 
 - Plugin SDK
 - Multi-domain plugin catalog
+- Hosted audit dashboard
 
 ### Phase 4
 
-- AXG protocol formalization and interoperability profile
+- AXG Passport spec formalization
+- Agentic execution control interoperability profile
 
 ## Contributing
 
