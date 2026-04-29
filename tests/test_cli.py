@@ -1,5 +1,6 @@
 import json
 import pytest
+import runpy
 from pathlib import Path
 from axg.cli import cmd_validate_plugin, cmd_simulate_decision, get_parser, main
 import argparse
@@ -132,6 +133,13 @@ def test_main_simulate(monkeypatch):
     monkeypatch.setattr("sys.argv", ["axg", "simulate-decision", "--plugin", "p", "--payload", "f"])
     with pytest.raises(SystemExit) as e:
         main()
+    assert e.value.code == 1
+
+
+def test_module_entrypoint(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["axg", "validate-plugin", "--id", "missing"])
+    with pytest.raises(SystemExit) as e:
+        runpy.run_module("axg.cli", run_name="__main__")
     assert e.value.code == 1
 
 def test_cmd_validate_plugin_unexpected_error(tmp_path, monkeypatch):
