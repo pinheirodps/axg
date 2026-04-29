@@ -66,6 +66,7 @@ class DecisionResponse(BaseModel):
     execution_id: str
     plugin_version: str
     decision: Decision
+    decision_token: str | None = None
     scores: DecisionScores
     actionable_payload: dict[str, Any]
     human_readable_reason: str
