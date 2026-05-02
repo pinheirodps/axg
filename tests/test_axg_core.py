@@ -2,6 +2,7 @@ import json
 from io import StringIO
 
 import pytest
+import respx
 from fastapi.testclient import TestClient
 
 from axg.api import app
@@ -125,6 +126,43 @@ def test_plugin_loader_missing_invalid_json_and_invalid_schema():
         PluginLoader(FilePath("{bad-json")).load("broken")
     with pytest.raises(PluginLoadError):
         PluginLoader(FilePath(json.dumps({"plugin": "broken"}))).load("broken")
+
+
+@respx.mock
+def test_plugin_loader_remote():
+    url = "https://example.com/plugin/rules.json"
+    plugin_data = {
+        "plugin": "remote-test",
+        "version": "1.0.0",
+        "domain": "remote",
+        "actions": {"test": {"required_permissions": [], "base_risk": 0.1}},
+        "rules": []
+    }
+    respx.get(url).respond(json=plugin_data)
+    
+    loader = PluginLoader()
+    plugin = loader.load(url)
+    
+    assert plugin.plugin == "remote-test"
+    assert plugin.version == "1.0.0"
+
+@respx.mock
+def test_plugin_loader_remote_failure():
+    url = "https://example.com/fail/rules.json"
+    respx.get(url).respond(status_code=404)
+    
+    loader = PluginLoader()
+    with pytest.raises(PluginLoadError, match="Failed to fetch remote plugin"):
+        loader.load(url)
+
+@respx.mock
+def test_plugin_loader_remote_invalid_json():
+    url = "https://example.com/invalid/rules.json"
+    respx.get(url).respond(content="not-json")
+    
+    loader = PluginLoader()
+    with pytest.raises(PluginLoadError, match="invalid"):
+        loader.load(url)
 
 
 def test_condition_group_requires_condition():
