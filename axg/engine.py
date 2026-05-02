@@ -205,7 +205,9 @@ class DecisionEngine:
                 "financial write operation, confirmation is required before saving."
             )
         if triggered_rules:
-            return " ".join(rule.reason for rule in triggered_rules)
+            # Sort by precedence to show most critical reason first
+            sorted_rules = sorted(triggered_rules, key=lambda r: DECISION_PRECEDENCE[r.decision], reverse=True)
+            return " ".join(rule.reason for rule in sorted_rules)
         if decision == Decision.ALLOW:
             return "No policy rule was triggered and confidence is within the automatic execution threshold."
         if decision == Decision.SUGGEST:
