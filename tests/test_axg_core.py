@@ -1,5 +1,6 @@
 import json
 from io import StringIO
+from unittest.mock import patch
 
 import pytest
 import respx
@@ -163,6 +164,34 @@ def test_plugin_loader_remote_invalid_json():
     loader = PluginLoader()
     with pytest.raises(PluginLoadError, match="invalid"):
         loader.load(url)
+
+def test_plugin_loader_ssrf_protection():
+    loader = PluginLoader()
+    
+    # Test HTTP (unsafe)
+    with pytest.raises(PluginLoadError, match="unsafe or not HTTPS"):
+        loader.load("http://trusted.com/rules.json")
+        
+    # Test Private IP (resolved from hostname)
+    # Note: We can mock socket.gethostbyname if we want to be independent of real DNS
+    with patch("socket.gethostbyname") as mock_dns:
+        mock_dns.return_value = "192.168.1.1"
+        with pytest.raises(PluginLoadError, match="unsafe"):
+            loader.load("https://internal.service/rules.json")
+            
+        mock_dns.return_value = "127.0.0.1"
+        with pytest.raises(PluginLoadError, match="unsafe"):
+            loader.load("https://localhost.localdomain/rules.json")
+            
+    # Test malformed / empty hostname
+    with pytest.raises(PluginLoadError, match="unsafe"):
+        loader.load("https:///rules.json")
+
+def test_plugin_loader_dns_failure():
+    loader = PluginLoader()
+    with patch("socket.gethostbyname", side_effect=Exception("DNS Error")):
+        with pytest.raises(PluginLoadError, match="unsafe"):
+            loader.load("https://nonexistent.void/rules.json")
 
 
 def test_condition_group_requires_condition():
