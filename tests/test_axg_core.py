@@ -733,3 +733,14 @@ def test_api_logs_decision_request(caplog):
     assert request_logged["execution_id"] == "test_exec_api_log"
     assert response_logged["event"] == "axg.decision.response_emitted"
     assert response_logged["execution_id"] == "test_exec_api_log"
+
+
+def test_api_jwks():
+    client = TestClient(app)
+    response = client.get("/.well-known/jwks.json")
+    assert response.status_code == 200
+    data = response.json()
+    assert "keys" in data
+    assert len(data["keys"]) == 1
+    assert data["keys"][0]["kid"] == "axg-key-001"
+    assert data["keys"][0]["kty"] == "RSA"

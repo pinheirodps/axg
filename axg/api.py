@@ -21,7 +21,7 @@ app = FastAPI(
 engine = DecisionEngine()
 
 
-from axg.crypto import get_public_key, KID
+from axg.crypto import get_public_key, get_jwks, key_manager
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
@@ -29,8 +29,14 @@ def health_check() -> dict[str, str]:
 
 @app.get("/v1/certs")
 def get_certs() -> dict[str, str]:
-    """Exposes the public key for verifying AXG decision tokens."""
-    return {"public_key": get_public_key(), "kid": KID, "alg": "RS256"}
+    """Exposes the public key for verifying AXG decision tokens (Legacy PEM)."""
+    return {"public_key": get_public_key(), "kid": key_manager.KID, "alg": "RS256"}
+
+
+@app.get("/.well-known/jwks.json")
+def get_jwks_endpoint():
+    """Standard JWKS endpoint for automated key discovery."""
+    return get_jwks()
 
 
 @app.post("/v1/plugins/reload")
