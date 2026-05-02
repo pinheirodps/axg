@@ -1,0 +1,19 @@
+services:
+  axg:
+    build: .
+    ports:
+      - "8090:8090"
+    environment:
+      - AXG_ADMIN_TOKEN=axg-secret-123
+      - AXG_PRIVATE_KEY=${AXG_PRIVATE_KEY:-}
+    volumes:
+      - ./plugins:/app/plugins
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Sample Consumer App (Simulating a backend using AXG)
+  # This could be a small Node.js app using our new SDK
+  # For now, we'll use a simple mock or the user can run their app
