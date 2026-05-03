@@ -140,9 +140,15 @@ def test_plugin_loader_invalid_subdir(tmp_path):
     with pytest.raises(PluginLoadError, match="not found"):
         loader.load("not-a-plugin")
 
+def test_plugin_loader_remote_disabled_by_default():
+    loader = PluginLoader()
+    with pytest.raises(PluginLoadError, match="disabled for security"):
+        loader.load("https://example.com/plugin.json")
+
 
 @respx.mock
-def test_plugin_loader_remote():
+def test_plugin_loader_remote(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     url = "https://example.com/plugin/rules.json"
     plugin_data = {
         "plugin": "remote-test",
@@ -160,7 +166,8 @@ def test_plugin_loader_remote():
     assert plugin.version == "1.0.0"
 
 @respx.mock
-def test_plugin_loader_remote_failure():
+def test_plugin_loader_remote_failure(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     url = "https://example.com/fail/rules.json"
     respx.get(url).respond(status_code=404)
     
@@ -169,7 +176,8 @@ def test_plugin_loader_remote_failure():
         loader.load(url)
 
 @respx.mock
-def test_plugin_loader_remote_invalid_json():
+def test_plugin_loader_remote_invalid_json(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     url = "https://example.com/invalid/rules.json"
     respx.get(url).respond(content="not-json")
     
@@ -177,7 +185,8 @@ def test_plugin_loader_remote_invalid_json():
     with pytest.raises(PluginLoadError, match="invalid"):
         loader.load(url)
 
-def test_plugin_loader_ssrf_protection():
+def test_plugin_loader_ssrf_protection(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
     
     # Test HTTP (unsafe)
@@ -199,7 +208,8 @@ def test_plugin_loader_ssrf_protection():
     with pytest.raises(PluginLoadError, match="unsafe"):
         loader.load("https:///rules.json")
 
-def test_plugin_loader_dns_failure():
+def test_plugin_loader_dns_failure(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
     with patch("socket.gethostbyname", side_effect=Exception("DNS Error")):
         with pytest.raises(PluginLoadError, match="unsafe"):

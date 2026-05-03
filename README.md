@@ -323,6 +323,7 @@ Important environment variables:
 | `AXG_AUDIT_FILE` | Optional JSONL audit output path. |
 | `AXG_AUDIT_WEBHOOK` | Optional audit webhook URL. |
 | `AXG_AUDIT_WEBHOOK_TOKEN` | Optional audit webhook bearer token. |
+| `ENABLE_REMOTE_PLUGINS` | Enables HTTP/HTTPS plugin loading. Defaults to `false` for security. |
 
 ## Production Validation Scenarios Covered
 

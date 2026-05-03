@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from functools import lru_cache
 import socket
 import ipaddress
@@ -31,6 +32,11 @@ class PluginLoader:
     def load(self, plugin_id: str) -> Plugin:
         """Loads a plugin by ID (local name) or URI (remote URL)."""
         if plugin_id.startswith(("http://", "https://")):
+            if os.environ.get("ENABLE_REMOTE_PLUGINS", "false").lower() != "true":
+                raise PluginLoadError(
+                    "Remote plugin loading is disabled for security. "
+                    "Set ENABLE_REMOTE_PLUGINS=true to enable."
+                )
             return self._load_remote(plugin_id)
         return self._load_local(plugin_id)
 
