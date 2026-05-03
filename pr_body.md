@@ -1,5 +1,5 @@
 ## 🛡️ Summary
-This PR evolves AXG into a production-ready, open-source security foundation for AI agent orchestration. **(Note: This is a fresh PR with a purged and sanitized history to remove build artifacts and node_modules).**
+This PR evolves **Agent Execution Guard (AXG)** into a production-ready, open-source security foundation for AI agent orchestration. **(Note: This is a fresh PR with a purged and sanitized history to remove build artifacts and node_modules).**
 
 ## 🚀 Key Features
 - **Standardized Cryptography**: Implemented OIDC-compliant JWKS (/.well-known/jwks.json) and a SOLID KeyManager for secure RSA lifecycle management.
