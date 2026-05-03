@@ -109,3 +109,25 @@ async def test_verify_passport_generic_jwt_error(rsa_keys):
     with pytest.raises(AxgVerificationError, match="JWT Verification failed"):
         # Pass invalid token
         await client.verify_passport("invalid-token", {}, "app", _signing_key=pub_key)
+
+@pytest.mark.asyncio
+async def test_verify_passport_invalid_issuer(rsa_keys):
+    priv_pem, pub_key = rsa_keys
+    app_id = "test-app"
+    token = jwt.encode({"iss": "wrong", "aud": app_id, "exp": 9999999999}, priv_pem, algorithm="RS256")
+    client = AxgClient("https://axg.local")
+    with pytest.raises(AxgVerificationError, match="Invalid issuer"):
+        await client.verify_passport(token, {}, app_id, _signing_key=pub_key)
+
+@pytest.mark.asyncio
+async def test_verify_passport_missing_payload_hash(rsa_keys):
+    priv_pem, pub_key = rsa_keys
+    app_id = "test-app"
+    token = jwt.encode(
+        {"iss": "axg-engine", "aud": app_id, "decision": "ALLOW", "exp": 9999999999}, 
+        priv_pem, 
+        algorithm="RS256"
+    )
+    client = AxgClient("https://axg.local")
+    with pytest.raises(AxgVerificationError, match="Missing payload_hash"):
+        await client.verify_passport(token, {}, app_id, _signing_key=pub_key)

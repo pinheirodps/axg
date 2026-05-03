@@ -128,6 +128,18 @@ def test_plugin_loader_missing_invalid_json_and_invalid_schema():
     with pytest.raises(PluginLoadError):
         PluginLoader(FilePath(json.dumps({"plugin": "broken"}))).load("broken")
 
+def test_plugin_loader_empty_dir(tmp_path):
+    loader = PluginLoader(tmp_path)
+    with pytest.raises(PluginLoadError, match="not found"):
+        loader.load("any-plugin")
+
+def test_plugin_loader_invalid_subdir(tmp_path):
+    # Create a subdir that is NOT a plugin (no rules.json)
+    (tmp_path / "not-a-plugin").mkdir()
+    loader = PluginLoader(tmp_path)
+    with pytest.raises(PluginLoadError, match="not found"):
+        loader.load("not-a-plugin")
+
 
 @respx.mock
 def test_plugin_loader_remote():
@@ -733,6 +745,29 @@ def test_api_plugins_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     response = client.post("/v1/plugins/reload")
     # Fail closed: should be 401
     assert response.status_code == 401
+    assert "not configured" in response.json()["detail"]
+
+def test_api_jwks_endpoint() -> None:
+    client = TestClient(app)
+    response = client.get("/.well-known/jwks.json")
+    assert response.status_code == 200
+    data = response.json()
+    assert "keys" in data
+    assert len(data["keys"]) > 0
+    key = data["keys"][0]
+    assert key["kid"] == "axg-key-001"
+    assert key["kty"] == "RSA"
+    assert key["alg"] == "RS256"
+    assert "n" in key
+    assert "e" in key
+
+def test_api_decisions_malformed_request() -> None:
+    client = TestClient(app)
+    # Missing action_type
+    bad_data = request_data()
+    del bad_data["action_type"]
+    response = client.post("/v1/decisions", json=bad_data)
+    assert response.status_code == 422 # Pydantic validation error
 
 def test_api_decisions_token_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     from axg import engine

@@ -67,13 +67,12 @@ class AxgClient:
                     "ACTION_TYPE_MISMATCH"
                 )
 
-            # 3. Payload Integrity Check
-            expected_hash = hash_payload(payload)
-            if claims.get("payload_hash") != expected_hash:
-                raise AxgVerificationError(
-                    "Payload hash mismatch. Possible tampering detected.",
-                    "PAYLOAD_TAMPERED"
-                )
+            # 3. Payload Integrity check
+            if "payload_hash" not in claims:
+                raise AxgVerificationError("Missing payload_hash claim in passport.", "MISSING_PAYLOAD_HASH")
+                
+            if claims.get("payload_hash") != hash_payload(payload):
+                raise AxgVerificationError("Payload hash mismatch. Possible tampering detected.", "PAYLOAD_TAMPERED")
 
             return claims
 

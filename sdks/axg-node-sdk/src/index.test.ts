@@ -115,6 +115,36 @@ describe('AXG Node.js SDK', () => {
         .rejects.toThrow('Action type mismatch');
     });
 
+    it('should throw error if issuer is invalid', async () => {
+      (jose.jwtVerify as any).mockResolvedValue({
+        payload: {
+          iss: 'malicious-issuer',
+          aud: appId,
+          decision: 'ALLOW',
+          payload_hash: hashPayload({}),
+        },
+      });
+
+      const client = new AxgClient(baseUrl);
+      await expect(client.verifyPassport('token', {}, { appId, axgBaseUrl: baseUrl }))
+        .rejects.toThrow('Invalid issuer');
+    });
+
+    it('should throw error if payload_hash is missing', async () => {
+      (jose.jwtVerify as any).mockResolvedValue({
+        payload: {
+          iss: 'axg-engine',
+          aud: appId,
+          decision: 'ALLOW',
+          // payload_hash missing
+        },
+      });
+
+      const client = new AxgClient(baseUrl);
+      await expect(client.verifyPassport('token', {}, { appId, axgBaseUrl: baseUrl }))
+        .rejects.toThrow('Missing payload_hash');
+    });
+
     it('should wrap generic errors into AxgVerificationError', async () => {
       (jose.jwtVerify as any).mockRejectedValue(new Error('JWT Expired'));
 

@@ -81,13 +81,18 @@ export class AxgClient {
         );
       }
 
-      // 3. Payload Integrity Check (Anti-tampering)
-      const currentHash = hashPayload(payload);
-      if (passport.payload_hash !== currentHash) {
-        throw new AxgVerificationError(
-          'Payload hash mismatch. Possible tampering detected.',
-          'PAYLOAD_TAMPERED'
-        );
+      // 2. Issuer check
+      if (passport.iss !== 'axg-engine') {
+        throw new AxgVerificationError(`Invalid issuer: ${passport.iss}`, 'INVALID_ISSUER');
+      }
+
+      // 3. Payload Integrity check
+      if (!passport.payload_hash) {
+        throw new AxgVerificationError('Missing payload_hash claim in passport.', 'MISSING_PAYLOAD_HASH');
+      }
+
+      if (claims.payload_hash !== hashPayload(payload)) {
+        throw new AxgVerificationError('Payload hash mismatch. Possible tampering detected.', 'PAYLOAD_TAMPERED');
       }
 
       return passport;
