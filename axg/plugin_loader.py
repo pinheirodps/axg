@@ -89,15 +89,38 @@ class PluginLoader:
             raise PluginLoadError(f"Remote plugin from {hostname} is invalid: {exc}") from exc
 
     def _get_safe_ip(self, hostname: str) -> str | None:
-        """Resolves hostname and returns IP only if it's safe (public)."""
+        """
+        Resolves hostname and returns a safe IP only if ALL resolved addresses are global.
+        Enterprise-grade protection against SSRF, CGNAT, and DNS rebinding.
+        """
         try:
-            ip = socket.gethostbyname(hostname)
-            ip_obj = ipaddress.ip_address(ip)
-            
-            # Block private, loopback and link-local IPs
-            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
+            # Use getaddrinfo to see ALL potential target addresses
+            # We restrict to IPv4 for consistent pinning logic
+            addr_info = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
+            if not addr_info:
                 return None
+            
+            ips = list(set(info[4][0] for info in addr_info))
+            
+            # CGNAT range (Shared Address Space)
+            cgnat_net = ipaddress.ip_network("100.64.0.0/10")
+            
+            for ip in ips:
+                ip_obj = ipaddress.ip_address(ip)
                 
-            return ip
-        except Exception:
+                # 1. Must be a global public address
+                # is_global covers most, but we add explicit checks for defense-in-depth
+                if not ip_obj.is_global or ip_obj.is_multicast or ip_obj.is_reserved or ip_obj.is_link_local or ip_obj.is_unspecified:
+                    logger.warning(f"[AXG] Blocked unsafe/non-global IP for {hostname}: {ip}")
+                    return None
+                
+                # 2. Block CGNAT (100.64.0.0/10)
+                if isinstance(ip_obj, ipaddress.IPv4Address) and ip_obj in cgnat_net:
+                    logger.warning(f"[AXG] Blocked CGNAT IP for {hostname}: {ip}")
+                    return None
+            
+            # Return the first safe IP for pinning
+            return ips[0]
+        except Exception as e:
+            logger.error(f"[AXG] DNS resolution/validation failed for {hostname}: {e}")
             return None

@@ -1,4 +1,6 @@
 import json
+import os
+import socket
 from io import StringIO
 from unittest.mock import patch
 
@@ -147,7 +149,6 @@ def test_plugin_loader_remote_disabled_by_default():
 
 
 @respx.mock
-@respx.mock
 def test_plugin_loader_remote(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     hostname = "example.com"
@@ -162,11 +163,11 @@ def test_plugin_loader_remote(monkeypatch):
         "actions": {"test": {"required_permissions": [], "base_risk": 0.1}},
         "rules": []
     }
-    # Match the IP URL that DNS pinning produces
     respx.get(ip_url).respond(json=plugin_data)
     
     loader = PluginLoader()
-    with patch("socket.gethostbyname", return_value=ip):
+    # Mock getaddrinfo to return the public IP
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
         plugin = loader.load(url)
     
     assert plugin.plugin == "remote-test"
@@ -182,7 +183,7 @@ def test_plugin_loader_remote_failure(monkeypatch):
     respx.get(ip_url).respond(status_code=404)
     
     loader = PluginLoader()
-    with patch("socket.gethostbyname", return_value=ip):
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
         with pytest.raises(PluginLoadError, match="Failed to fetch remote plugin"):
             loader.load(url)
 
@@ -196,7 +197,7 @@ def test_plugin_loader_remote_invalid_json(monkeypatch):
     respx.get(ip_url).respond(content="not-json")
     
     loader = PluginLoader()
-    with patch("socket.gethostbyname", return_value=ip):
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
         with pytest.raises(PluginLoadError, match="invalid"):
             loader.load(url)
 
@@ -208,15 +209,27 @@ def test_plugin_loader_ssrf_protection(monkeypatch):
     with pytest.raises(PluginLoadError, match="MUST use HTTPS"):
         loader.load("http://trusted.com/rules.json")
         
-    # Test Private IP (resolved from hostname)
-    with patch("socket.gethostbyname") as mock_dns:
-        mock_dns.return_value = "192.168.1.1"
+    # Test Private/Non-Global IPs
+    with patch("socket.getaddrinfo") as mock_dns:
+        # Private IP
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("192.168.1.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://internal.service/rules.json")
             
-        mock_dns.return_value = "127.0.0.1"
+        # Loopback
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("127.0.0.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://localhost.localdomain/rules.json")
+            
+        # CGNAT
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("100.64.1.1", 443))]
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://cgnat.test/rules.json")
+
+        # Multicast
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("224.0.0.1", 443))]
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://multicast.test/rules.json")
             
     # Test malformed / empty hostname
     with pytest.raises(PluginLoadError, match="Invalid remote plugin URL"):
@@ -225,7 +238,7 @@ def test_plugin_loader_ssrf_protection(monkeypatch):
 def test_plugin_loader_dns_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
-    with patch("socket.gethostbyname", side_effect=Exception("DNS Error")):
+    with patch("socket.getaddrinfo", side_effect=Exception("DNS Error")):
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://nonexistent.void/rules.json")
 
