@@ -2,8 +2,15 @@
   "name": "axg-node-sdk",
   "version": "1.0.0",
   "description": "Official Node.js SDK for Agent Execution Guard (AXG) token verification.",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "test": "vitest run"

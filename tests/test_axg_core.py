@@ -147,9 +147,14 @@ def test_plugin_loader_remote_disabled_by_default():
 
 
 @respx.mock
+@respx.mock
 def test_plugin_loader_remote(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
-    url = "https://example.com/plugin/rules.json"
+    hostname = "example.com"
+    ip = "93.184.216.34"
+    url = f"https://{hostname}/plugin/rules.json"
+    ip_url = f"https://{ip}/plugin/rules.json"
+    
     plugin_data = {
         "plugin": "remote-test",
         "version": "1.0.0",
@@ -157,10 +162,12 @@ def test_plugin_loader_remote(monkeypatch):
         "actions": {"test": {"required_permissions": [], "base_risk": 0.1}},
         "rules": []
     }
-    respx.get(url).respond(json=plugin_data)
+    # Match the IP URL that DNS pinning produces
+    respx.get(ip_url).respond(json=plugin_data)
     
     loader = PluginLoader()
-    plugin = loader.load(url)
+    with patch("socket.gethostbyname", return_value=ip):
+        plugin = loader.load(url)
     
     assert plugin.plugin == "remote-test"
     assert plugin.version == "1.0.0"
@@ -168,51 +175,58 @@ def test_plugin_loader_remote(monkeypatch):
 @respx.mock
 def test_plugin_loader_remote_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
-    url = "https://example.com/fail/rules.json"
-    respx.get(url).respond(status_code=404)
+    hostname = "example.com"
+    ip = "93.184.216.34"
+    url = f"https://{hostname}/fail/rules.json"
+    ip_url = f"https://{ip}/fail/rules.json"
+    respx.get(ip_url).respond(status_code=404)
     
     loader = PluginLoader()
-    with pytest.raises(PluginLoadError, match="Failed to fetch remote plugin"):
-        loader.load(url)
+    with patch("socket.gethostbyname", return_value=ip):
+        with pytest.raises(PluginLoadError, match="Failed to fetch remote plugin"):
+            loader.load(url)
 
 @respx.mock
 def test_plugin_loader_remote_invalid_json(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
-    url = "https://example.com/invalid/rules.json"
-    respx.get(url).respond(content="not-json")
+    hostname = "example.com"
+    ip = "93.184.216.34"
+    url = f"https://{hostname}/invalid/rules.json"
+    ip_url = f"https://{ip}/invalid/rules.json"
+    respx.get(ip_url).respond(content="not-json")
     
     loader = PluginLoader()
-    with pytest.raises(PluginLoadError, match="invalid"):
-        loader.load(url)
+    with patch("socket.gethostbyname", return_value=ip):
+        with pytest.raises(PluginLoadError, match="invalid"):
+            loader.load(url)
 
 def test_plugin_loader_ssrf_protection(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
     
     # Test HTTP (unsafe)
-    with pytest.raises(PluginLoadError, match="unsafe or not HTTPS"):
+    with pytest.raises(PluginLoadError, match="MUST use HTTPS"):
         loader.load("http://trusted.com/rules.json")
         
     # Test Private IP (resolved from hostname)
-    # Note: We can mock socket.gethostbyname if we want to be independent of real DNS
     with patch("socket.gethostbyname") as mock_dns:
         mock_dns.return_value = "192.168.1.1"
-        with pytest.raises(PluginLoadError, match="unsafe"):
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://internal.service/rules.json")
             
         mock_dns.return_value = "127.0.0.1"
-        with pytest.raises(PluginLoadError, match="unsafe"):
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://localhost.localdomain/rules.json")
             
     # Test malformed / empty hostname
-    with pytest.raises(PluginLoadError, match="unsafe"):
+    with pytest.raises(PluginLoadError, match="Invalid remote plugin URL"):
         loader.load("https:///rules.json")
 
 def test_plugin_loader_dns_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
     with patch("socket.gethostbyname", side_effect=Exception("DNS Error")):
-        with pytest.raises(PluginLoadError, match="unsafe"):
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://nonexistent.void/rules.json")
 
 

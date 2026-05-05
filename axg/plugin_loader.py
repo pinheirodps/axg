@@ -53,41 +53,51 @@ class PluginLoader:
             raise PluginLoadError(f"Local plugin '{plugin_id}' is invalid: {exc}") from exc
 
     def _load_remote(self, plugin_url: str) -> Plugin:
-        """Fetches a plugin from a remote URL with SSRF protection."""
-        if not self._is_safe_url(plugin_url):
-            raise PluginLoadError(f"Remote plugin URL is unsafe or not HTTPS: {plugin_url}")
+        """Fetches a plugin from a remote URL with strict SSRF protection (DNS Pinning)."""
+        parsed = urlparse(plugin_url)
+        hostname = parsed.hostname
+        if not hostname:
+            raise PluginLoadError(f"Invalid remote plugin URL: {plugin_url}")
 
-        logger.info(f"Fetching remote AXG plugin: {plugin_url}")
+        if parsed.scheme != "https":
+            raise PluginLoadError(f"Remote plugins MUST use HTTPS: {plugin_url}")
+
+        # Resolve and validate IP (DNS Pinning start)
+        safe_ip = self._get_safe_ip(hostname)
+        if not safe_ip:
+            raise PluginLoadError(f"Remote plugin host '{hostname}' is unsafe or resolves to private IP.")
+
+        # Reconstruct URL using IP to prevent rebinding
+        port_str = f":{parsed.port}" if parsed.port else ""
+        ip_url = parsed._replace(netloc=f"{safe_ip}{port_str}").geturl()
+
+        logger.info(f"Fetching remote AXG plugin: {hostname} ({safe_ip})")
         try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(plugin_url)
+            # We use headers for Host and extensions for SNI to preserve TLS verification
+            with httpx.Client(timeout=10.0, verify=True) as client:
+                response = client.get(
+                    ip_url,
+                    headers={"Host": hostname},
+                    extensions={"sni_hostname": hostname}
+                )
                 response.raise_for_status()
                 data = response.json()
             return Plugin.model_validate(data)
         except httpx.HTTPError as exc:
-            raise PluginLoadError(f"Failed to fetch remote plugin from {plugin_url}: {exc}") from exc
+            raise PluginLoadError(f"Failed to fetch remote plugin from {hostname}: {exc}") from exc
         except (json.JSONDecodeError, ValidationError) as exc:
-            raise PluginLoadError(f"Remote plugin from {plugin_url} is invalid: {exc}") from exc
+            raise PluginLoadError(f"Remote plugin from {hostname} is invalid: {exc}") from exc
 
-    def _is_safe_url(self, url: str) -> bool:
-        """Validates that a URL is safe for remote plugin loading (SSRF protection)."""
+    def _get_safe_ip(self, hostname: str) -> str | None:
+        """Resolves hostname and returns IP only if it's safe (public)."""
         try:
-            parsed = urlparse(url)
-            if parsed.scheme != "https":
-                return False
-            
-            # Resolve hostname to IP to check for private networks
-            hostname = parsed.hostname
-            if not hostname:
-                return False
-                
             ip = socket.gethostbyname(hostname)
             ip_obj = ipaddress.ip_address(ip)
             
             # Block private, loopback and link-local IPs
             if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local:
-                return False
+                return None
                 
-            return True
+            return ip
         except Exception:
-            return False
+            return None

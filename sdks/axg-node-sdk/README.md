@@ -13,15 +13,19 @@ npm install axg-node-sdk
 ## Usage
 
 ```typescript
-import { verifyPassport } from 'axg-node-sdk';
+import { AxgClient } from 'axg-node-sdk';
 
-const publicKey = '...'; // Your AXG Public Key
-const token = '...'; // The token from AXG
+const axg = new AxgClient('https://axg.your-domain.com');
+
+const token = '...'; // The Passport token from AXG
+const payload = { merchant: 'UBER', amount: 15 }; // The data you want to verify
 
 try {
-  const payload = await verifyPassport(token, publicKey);
-  console.log('Authorized action:', payload.action);
+  const claims = await axg.verifyPassport(token, payload, {
+    appId: 'your-app-id'
+  });
+  console.log('Authorized action:', claims.action_type);
 } catch (err) {
-  console.error('Unauthorized:', err.message);
+  console.error('Verification failed:', err.message);
 }
 ```

@@ -13,14 +13,25 @@ pip install axg-python-sdk
 ## Usage
 
 ```python
-from axg_python_sdk import verify_passport
+import asyncio
+from axg_python_sdk import AxgClient
 
-public_key = '...' # Your AXG Public Key
-token = '...' # The token from AXG
+async def main():
+    axg = AxgClient("https://axg.your-domain.com")
+    
+    token = "..."  # The Passport token from AXG
+    payload = {"merchant": "UBER", "amount": 15}  # Data to verify
 
-try:
-    payload = verify_passport(token, public_key)
-    print(f"Authorized action: {payload['action']}")
-except Exception as e:
-    print(f"Unauthorized: {str(e)}")
+    try:
+        claims = await axg.verify_passport(
+            token=token, 
+            payload=payload, 
+            app_id="your-app-id"
+        )
+        print(f"Authorized action: {claims['action_type']}")
+    except Exception as e:
+        print(f"Verification failed: {str(e)}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```

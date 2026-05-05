@@ -30,6 +30,9 @@ export class AxgVerificationError extends Error {
  */
 export function hashPayload(payload: Record<string, any>): string {
   const serialized = stringify(payload);
+  if (serialized === undefined) {
+    throw new Error('Failed to serialize payload: result was undefined');
+  }
   return createHash('sha256').update(serialized).digest('hex');
 }
 

@@ -20,15 +20,27 @@ AXG is designed to prevent blind automation by enforcing deterministic decisions
 This pattern helps teams safely adopt AI in financial and operational workflows where mistakes are expensive.
 
 ## Architecture Overview
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 
+<<<<<<< ours
 ![MUAI, OpenClaw and AXG control flow](docs/images/muai-axg-openclaw-control-flow.svg)
 
 In the broader ecosystem, MUAI is the gateway for AI capabilities and model fallback. OpenClaw can run as an agent capability behind MUAI, but it does not execute real-world changes directly. AXG remains the deterministic gate before writes, external actions, or operational truth updates.
+=======
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+>>>>>>> theirs
 
 Execution flow:
 
 ```text
+<<<<<<< ours
 App/Bot/Tool -> MUAI (intent + capabilities) -> AXG (execution guard) -> Core system write path
+=======
+Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+>>>>>>> theirs
 ```
 
 Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
@@ -53,10 +65,13 @@ AXG is **not**:
 - Validates execution context (`app_id`, `plugin_id`, source, action).
 - Supports agent identity and permission-based authorization.
 - Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+<<<<<<< ours
 - Issues short-lived cryptographic Decision Tokens for `ALLOW` decisions.
 - Exposes public verification material through `/v1/certs`.
 - Supports file and webhook audit sinks for external audit pipelines.
 - Provides a CLI for plugin validation and local decision simulation.
+=======
+>>>>>>> theirs
 - Computes deterministic scoring:
   - `llm_confidence`
   - `final_confidence` (after penalties)
@@ -70,6 +85,7 @@ AXG is **not**:
   - triggered rules
 - Emits structured logs for request/decision tracing.
 - Fails safe to `CONFIRM` if plugin loading/validation fails.
+<<<<<<< ours
 - Fails safe to `CONFIRM` if decision token signing fails.
 
 ## AXG Passport
@@ -107,6 +123,28 @@ Agent / Bot / App
 Current FinNorte integration runs Passport verification in shadow mode for bank import categorization. Shadow mode validates and logs the token without blocking production writes yet. This lets the system prove reliability before moving to hard enforcement.
 
 ### Key Management
+=======
+
+## Decision Flow (Deterministic)
+
+1. Load plugin by `plugin_id`.
+2. Evaluate declarative rules against request data.
+3. Compute confidence/risk/uncertainty scores.
+4. Apply fail-safe uncertainty gate for risky financial writes.
+5. Enforce action permissions.
+6. Apply strongest rule decision by precedence.
+7. Fallback to threshold-based decision when no rule applies.
+
+Decision precedence:
+
+```text
+BLOCK > CONFIRM > SUGGEST > ALLOW
+```
+
+## API
+
+Start locally:
+>>>>>>> theirs
 
 AXG uses asymmetric keys:
 
@@ -119,6 +157,7 @@ If no keys are configured, AXG generates ephemeral local-development keys at sta
 
 ### Fail-Safe Signing
 
+<<<<<<< ours
 If token signing fails, AXG does not return an automatic `ALLOW`.
 
 Instead it:
@@ -127,6 +166,65 @@ Instead it:
 - downgrades the decision to `CONFIRM` when needed;
 - adds `decision_token_signing_failed` to `audit_flags`;
 - returns a human-readable reason explaining that automatic execution cannot be authorized.
+=======
+
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+
+Execution flow:
+
+```text
+Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+```
+
+Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
+
+## What AXG Is (and Is Not)
+=======
+=======
+
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+
+Execution flow:
+
+```text
+Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+```
+
+Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
+
+## What AXG Is (and Is Not)
+
+AXG **is**:
+
+- a deterministic execution control plane
+- a policy/risk decision engine
+- an auditable guardrail layer for production workflows
+
+AXG is **not**:
+
+- an LLM wrapper
+- a prompt orchestration framework
+- an autonomous agent framework
+- a learning/retraining system
+
+## Core Capabilities
+
+- Validates execution context (`app_id`, `plugin_id`, source, action).
+- Supports agent identity and permission-based authorization.
+- Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+- Computes deterministic scoring:
+  - `llm_confidence`
+  - `final_confidence` (after penalties)
+  - `risk_score`
+  - `uncertainty_score`
+- Handles uncertain intent/fallback paths safely for financial write operations.
+- Returns a structured decision with:
+  - human-readable reason
+  - actionable payload
+  - audit flags
+  - triggered rules
+- Emits structured logs for request/decision tracing.
+- Fails safe to `CONFIRM` if plugin loading/validation fails.
 
 ## Decision Flow (Deterministic)
 
@@ -137,11 +235,195 @@ Instead it:
 5. Enforce action permissions.
 6. Apply strongest rule decision by precedence.
 7. Fallback to threshold-based decision when no rule applies.
-8. Sign the actionable payload when the final decision can be automatically authorized.
 
 Decision precedence:
 
 ```text
+BLOCK > CONFIRM > SUGGEST > ALLOW
+```
+
+## API
+
+Start locally:
+>>>>>>> theirs
+
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+
+Execution flow:
+
+```text
+Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+```
+
+<<<<<<< ours
+Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
+
+## What AXG Is (and Is Not)
+
+AXG **is**:
+
+- a deterministic execution control plane
+- a policy/risk decision engine
+- an auditable guardrail layer for production workflows
+
+AXG is **not**:
+
+- an LLM wrapper
+- a prompt orchestration framework
+- an autonomous agent framework
+- a learning/retraining system
+
+## Core Capabilities
+
+- Validates execution context (`app_id`, `plugin_id`, source, action).
+- Supports agent identity and permission-based authorization.
+- Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+- Computes deterministic scoring:
+  - `llm_confidence`
+  - `final_confidence` (after penalties)
+  - `risk_score`
+  - `uncertainty_score`
+- Handles uncertain intent/fallback paths safely for financial write operations.
+- Returns a structured decision with:
+  - human-readable reason
+  - actionable payload
+  - audit flags
+  - triggered rules
+- Emits structured logs for request/decision tracing.
+- Fails safe to `CONFIRM` if plugin loading/validation fails.
+
+## Decision Flow (Deterministic)
+
+1. Load plugin by `plugin_id`.
+2. Evaluate declarative rules against request data.
+3. Compute confidence/risk/uncertainty scores.
+4. Apply fail-safe uncertainty gate for risky financial writes.
+5. Enforce action permissions.
+6. Apply strongest rule decision by precedence.
+7. Fallback to threshold-based decision when no rule applies.
+
+Decision precedence:
+
+```text
+BLOCK > CONFIRM > SUGGEST > ALLOW
+```
+
+## API
+
+Start locally:
+>>>>>>> theirs
+
+AXG **is**:
+
+- a deterministic execution control plane
+- a policy/risk decision engine
+- an auditable guardrail layer for production workflows
+
+AXG is **not**:
+
+- an LLM wrapper
+- a prompt orchestration framework
+- an autonomous agent framework
+- a learning/retraining system
+
+## Core Capabilities
+
+- Validates execution context (`app_id`, `plugin_id`, source, action).
+- Supports agent identity and permission-based authorization.
+- Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+- Computes deterministic scoring:
+  - `llm_confidence`
+  - `final_confidence` (after penalties)
+  - `risk_score`
+  - `uncertainty_score`
+- Handles uncertain intent/fallback paths safely for financial write operations.
+- Returns a structured decision with:
+  - human-readable reason
+  - actionable payload
+  - audit flags
+  - triggered rules
+- Emits structured logs for request/decision tracing.
+- Fails safe to `CONFIRM` if plugin loading/validation fails.
+>>>>>>> theirs
+
+## Decision Flow (Deterministic)
+
+1. Load plugin by `plugin_id`.
+2. Evaluate declarative rules against request data.
+3. Compute confidence/risk/uncertainty scores.
+4. Apply fail-safe uncertainty gate for risky financial writes.
+5. Enforce action permissions.
+6. Apply strongest rule decision by precedence.
+7. Fallback to threshold-based decision when no rule applies.
+<<<<<<< ours
+8. Sign the actionable payload when the final decision can be automatically authorized.
+=======
+>>>>>>> theirs
+
+Decision precedence:
+
+```text
+=======
+
+![Why Agents Need Execution Control](docs/images/why-agents-need-execution-control.svg)
+
+Execution flow:
+
+```text
+Agent/Bot/Tool -> MUAI (intent) -> AXG (execution guard) -> Core system write path
+```
+
+<<<<<<< ours
+Conceptually, AXG is the policy and risk gate between intent understanding and persistence/actions.
+
+## What AXG Is (and Is Not)
+
+AXG **is**:
+
+- a deterministic execution control plane
+- a policy/risk decision engine
+- an auditable guardrail layer for production workflows
+
+AXG is **not**:
+
+- an LLM wrapper
+- a prompt orchestration framework
+- an autonomous agent framework
+- a learning/retraining system
+
+## Core Capabilities
+
+- Validates execution context (`app_id`, `plugin_id`, source, action).
+- Supports agent identity and permission-based authorization.
+- Applies declarative plugin rules (`plugins/<plugin_id>/rules.json`) with no dynamic code execution.
+- Computes deterministic scoring:
+  - `llm_confidence`
+  - `final_confidence` (after penalties)
+  - `risk_score`
+  - `uncertainty_score`
+- Handles uncertain intent/fallback paths safely for financial write operations.
+- Returns a structured decision with:
+  - human-readable reason
+  - actionable payload
+  - audit flags
+  - triggered rules
+- Emits structured logs for request/decision tracing.
+- Fails safe to `CONFIRM` if plugin loading/validation fails.
+
+## Decision Flow (Deterministic)
+
+1. Load plugin by `plugin_id`.
+2. Evaluate declarative rules against request data.
+3. Compute confidence/risk/uncertainty scores.
+4. Apply fail-safe uncertainty gate for risky financial writes.
+5. Enforce action permissions.
+6. Apply strongest rule decision by precedence.
+7. Fallback to threshold-based decision when no rule applies.
+
+Decision precedence:
+
+```text
+>>>>>>> theirs
 BLOCK > CONFIRM > SUGGEST > ALLOW
 ```
 
@@ -157,11 +439,40 @@ Endpoints:
 
 - `GET /health`
 - `POST /v1/decisions`
+<<<<<<< ours
+<<<<<<< ours
 - `GET /v1/certs`
 - `POST /v1/plugins/reload`
 
 `/v1/plugins/reload` is an administrative endpoint. It fails closed unless `AXG_ADMIN_TOKEN` is configured and the caller sends `Authorization: Bearer <token>`.
 
+=======
+Endpoints:
+
+- `GET /health`
+- `POST /v1/decisions`
+
+>>>>>>> theirs
+=======
+
+>>>>>>> theirs
+=======
+
+>>>>>>> theirs
+=======
+Endpoints:
+
+- `GET /health`
+- `POST /v1/decisions`
+
+>>>>>>> theirs
+=======
+Endpoints:
+
+- `GET /health`
+- `POST /v1/decisions`
+
+>>>>>>> theirs
 ### Example Request
 
 ```json
@@ -243,6 +554,11 @@ Endpoints:
 }
 ```
 
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 ### Example Certificate Response
 
 ```json
@@ -257,6 +573,36 @@ Endpoints:
 
 Plugins are JSON-only policies. No plugin runtime code is executed.
 
+=======
+## Plugin Model
+
+Plugins are JSON-only policies. No plugin runtime code is executed.
+
+>>>>>>> theirs
+=======
+## Plugin Model
+
+Plugins are JSON-only policies. No plugin runtime code is executed.
+
+>>>>>>> theirs
+=======
+## Plugin Model
+
+Plugins are JSON-only policies. No plugin runtime code is executed.
+
+>>>>>>> theirs
+=======
+## Plugin Model
+
+Plugins are JSON-only policies. No plugin runtime code is executed.
+
+>>>>>>> theirs
+=======
+## Plugin Model
+
+Plugins are JSON-only policies. No plugin runtime code is executed.
+
+>>>>>>> theirs
 Path convention:
 
 ```text
@@ -276,6 +622,11 @@ Condition groups:
 - `all`
 - `any`
 
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 ## CLI
 
 AXG ships with a small CLI for local validation and simulation.
@@ -305,11 +656,150 @@ AXG always emits structured decision logs. It can also send audit records to opt
 Audit delivery runs in the FastAPI background task path and should not block decision latency.
 
 For local webhook testing:
+=======
+## Production Validation Scenarios Covered
+
+Current tests and plugin behavior validate these scenarios:
+
+- High-value Uber expense from bot/chat paths -> `CONFIRM`
+- Normal expense with sufficient confidence -> `ALLOW`
+- Unknown intent + fallback on financial writes -> `CONFIRM`
+- Missing intent metadata on uncertain source for financial writes -> `CONFIRM`
+- Merchant/category mismatch for subscription-like detection -> `SUGGEST` or `CONFIRM` (never blind `ALLOW`)
+- Stable recurring condominium pattern -> `ALLOW`
+- Missing permissions for required action -> `BLOCK`
+- Unknown action in plugin -> `CONFIRM`
+- Missing/invalid plugin -> fail-safe `CONFIRM`
+
+=======
+## Production Validation Scenarios Covered
+
+Current tests and plugin behavior validate these scenarios:
+
+- High-value Uber expense from bot/chat paths -> `CONFIRM`
+- Normal expense with sufficient confidence -> `ALLOW`
+- Unknown intent + fallback on financial writes -> `CONFIRM`
+- Missing intent metadata on uncertain source for financial writes -> `CONFIRM`
+- Merchant/category mismatch for subscription-like detection -> `SUGGEST` or `CONFIRM` (never blind `ALLOW`)
+- Stable recurring condominium pattern -> `ALLOW`
+- Missing permissions for required action -> `BLOCK`
+- Unknown action in plugin -> `CONFIRM`
+- Missing/invalid plugin -> fail-safe `CONFIRM`
+
+>>>>>>> theirs
+=======
+## Production Validation Scenarios Covered
+
+Current tests and plugin behavior validate these scenarios:
+
+- High-value Uber expense from bot/chat paths -> `CONFIRM`
+- Normal expense with sufficient confidence -> `ALLOW`
+- Unknown intent + fallback on financial writes -> `CONFIRM`
+- Missing intent metadata on uncertain source for financial writes -> `CONFIRM`
+- Merchant/category mismatch for subscription-like detection -> `SUGGEST` or `CONFIRM` (never blind `ALLOW`)
+- Stable recurring condominium pattern -> `ALLOW`
+- Missing permissions for required action -> `BLOCK`
+- Unknown action in plugin -> `CONFIRM`
+- Missing/invalid plugin -> fail-safe `CONFIRM`
+
+>>>>>>> theirs
+=======
+## Production Validation Scenarios Covered
+
+Current tests and plugin behavior validate these scenarios:
+
+- High-value Uber expense from bot/chat paths -> `CONFIRM`
+- Normal expense with sufficient confidence -> `ALLOW`
+- Unknown intent + fallback on financial writes -> `CONFIRM`
+- Missing intent metadata on uncertain source for financial writes -> `CONFIRM`
+- Merchant/category mismatch for subscription-like detection -> `SUGGEST` or `CONFIRM` (never blind `ALLOW`)
+- Stable recurring condominium pattern -> `ALLOW`
+- Missing permissions for required action -> `BLOCK`
+- Unknown action in plugin -> `CONFIRM`
+- Missing/invalid plugin -> fail-safe `CONFIRM`
+
+>>>>>>> theirs
+=======
+## Production Validation Scenarios Covered
+
+Current tests and plugin behavior validate these scenarios:
+
+- High-value Uber expense from bot/chat paths -> `CONFIRM`
+- Normal expense with sufficient confidence -> `ALLOW`
+- Unknown intent + fallback on financial writes -> `CONFIRM`
+- Missing intent metadata on uncertain source for financial writes -> `CONFIRM`
+- Merchant/category mismatch for subscription-like detection -> `SUGGEST` or `CONFIRM` (never blind `ALLOW`)
+- Stable recurring condominium pattern -> `ALLOW`
+- Missing permissions for required action -> `BLOCK`
+- Unknown action in plugin -> `CONFIRM`
+- Missing/invalid plugin -> fail-safe `CONFIRM`
+
+>>>>>>> theirs
+## Project Structure
+
+```text
+axg/
+  api.py              # FastAPI app and request/response logging
+  engine.py           # deterministic decision orchestration
+  models.py           # Pydantic schemas and enums
+  plugin_loader.py    # plugin loading + schema validation
+  rules.py            # rule operator evaluation
+plugins/
+  finnorte/
+    rules.json        # FinNorte domain policy
+tests/
+  test_axg_core.py    # unit + API tests
+```
+
+## Fail-Safe Principles
+<<<<<<< ours
+<<<<<<< ours
+=======
+>>>>>>> theirs
+
+- **Never fail open** to `ALLOW` on plugin/config issues.
+- Unknown/high-uncertainty financial writes require confirmation.
+- Permission failures produce deterministic `BLOCK`.
+- Every decision includes machine-readable and human-readable audit context.
+<<<<<<< ours
+
+## Local Development
+
+Install dependencies and run tests:
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+
+- **Never fail open** to `ALLOW` on plugin/config issues.
+- Unknown/high-uncertainty financial writes require confirmation.
+- Permission failures produce deterministic `BLOCK`.
+- Every decision includes machine-readable and human-readable audit context.
+
+## Local Development
+
+Install dependencies and run tests:
+>>>>>>> theirs
+=======
+
+## Local Development
+
+Install dependencies and run tests:
+>>>>>>> theirs
 
 ```bash
 python scripts/webhook_listener.py --port 9999
 ```
 
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 ## Configuration
 
 Important environment variables:
@@ -364,10 +854,17 @@ tests/
   test_axg_core.py    # engine + API tests
   test_cli.py         # CLI tests
   test_crypto.py      # Passport crypto tests
+=======
+Run API:
+
+```bash
+python -m uvicorn axg.api:app --reload
+>>>>>>> theirs
 ```
 
 ## Fail-Safe Principles
 
+<<<<<<< ours
 - **Never fail open** to `ALLOW` on plugin/config issues.
 - Unknown/high-uncertainty financial writes require confirmation.
 - Permission failures produce deterministic `BLOCK`.
@@ -386,6 +883,22 @@ python -m pytest --cov=axg --cov-report=term-missing --cov-fail-under=100
 
 Run API:
 
+=======
+Run API:
+
+>>>>>>> theirs
+=======
+Run API:
+
+>>>>>>> theirs
+=======
+Run API:
+
+>>>>>>> theirs
+=======
+Run API:
+
+>>>>>>> theirs
 ```bash
 python -m uvicorn axg.api:app --reload
 ```
@@ -399,6 +912,10 @@ python -m uvicorn axg.api:app --reload
 - FastAPI decision endpoint
 - Structured audit logs
 - Unit/API test suite with full package coverage
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 - AXG Passport JWT signing
 - Public cert endpoint
 - CLI plugin validation/simulation
@@ -410,22 +927,95 @@ python -m uvicorn axg.api:app --reload
 - JWKS-style key rotation
 - Stronger agent identity and scopes
 - Enforcement mode in selected backend write paths
+=======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+
+### Phase 2
+
+- Stronger identity and token model
+- More expressive risk scoring profiles
+- Structured external audit sinks
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
 
 ### Phase 3
 
 - Plugin SDK
 - Multi-domain plugin catalog
+<<<<<<< ours
 - Hosted audit dashboard
 
 ### Phase 4
 
 - AXG Passport spec formalization
 - Agentic execution control interoperability profile
+=======
+=======
+=======
+>>>>>>> theirs
+
+### Phase 3
+
+- Plugin SDK
+- Multi-domain plugin catalog
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+
+### Phase 4
+
+- AXG protocol formalization and interoperability profile
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 
 ## Contributing
 
 Contributions are welcome:
 
+=======
+### Phase 1 (implemented)
+
+- Deterministic core decision engine
+- FinNorte plugin
+- FastAPI decision endpoint
+- Structured audit logs
+- Unit/API test suite with full package coverage
+=======
+>>>>>>> theirs
+
+### Phase 2
+
+- Stronger identity and token model
+- More expressive risk scoring profiles
+- Structured external audit sinks
+
+### Phase 3
+
+- Plugin SDK
+- Multi-domain plugin catalog
+
+### Phase 4
+
+- AXG protocol formalization and interoperability profile
+
+## Contributing
+
+Contributions are welcome:
+
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 - policy/risk rule improvements
 - documentation and examples
 - tests and edge-case scenarios
