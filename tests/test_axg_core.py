@@ -1,7 +1,11 @@
 import json
+import os
+import socket
 from io import StringIO
+from unittest.mock import patch, PropertyMock
 
 import pytest
+import respx
 from fastapi.testclient import TestClient
 
 from axg.api import app
@@ -125,6 +129,132 @@ def test_plugin_loader_missing_invalid_json_and_invalid_schema():
         PluginLoader(FilePath("{bad-json")).load("broken")
     with pytest.raises(PluginLoadError):
         PluginLoader(FilePath(json.dumps({"plugin": "broken"}))).load("broken")
+
+def test_plugin_loader_empty_dir(tmp_path):
+    loader = PluginLoader(tmp_path)
+    with pytest.raises(PluginLoadError, match="not found"):
+        loader.load("any-plugin")
+
+def test_plugin_loader_invalid_subdir(tmp_path):
+    # Create a subdir that is NOT a plugin (no rules.json)
+    (tmp_path / "not-a-plugin").mkdir()
+    loader = PluginLoader(tmp_path)
+    with pytest.raises(PluginLoadError, match="not found"):
+        loader.load("not-a-plugin")
+
+def test_plugin_loader_remote_disabled_by_default():
+    loader = PluginLoader()
+    with pytest.raises(PluginLoadError, match="disabled for security"):
+        loader.load("https://example.com/plugin.json")
+
+
+@respx.mock
+def test_plugin_loader_remote(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    hostname = "example.com"
+    ip = "93.184.216.34"
+    url = f"https://{hostname}/plugin/rules.json"
+    ip_url = f"https://{ip}/plugin/rules.json"
+    
+    plugin_data = {
+        "plugin": "remote-test",
+        "version": "1.0.0",
+        "domain": "remote",
+        "actions": {"test": {"required_permissions": [], "base_risk": 0.1}},
+        "rules": []
+    }
+    respx.get(ip_url).respond(json=plugin_data)
+    
+    loader = PluginLoader()
+    # Mock getaddrinfo to return the public IP
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
+        plugin = loader.load(url)
+    
+    assert plugin.plugin == "remote-test"
+    assert plugin.version == "1.0.0"
+
+@respx.mock
+def test_plugin_loader_remote_failure(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    hostname = "example.com"
+    ip = "93.184.216.34"
+    url = f"https://{hostname}/fail/rules.json"
+    ip_url = f"https://{ip}/fail/rules.json"
+    respx.get(ip_url).respond(status_code=404)
+    
+    loader = PluginLoader()
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
+        with pytest.raises(PluginLoadError, match="Failed to fetch remote plugin"):
+            loader.load(url)
+
+@respx.mock
+def test_plugin_loader_remote_invalid_json(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    hostname = "example.com"
+    ip = "93.184.216.34"
+    url = f"https://{hostname}/invalid/rules.json"
+    ip_url = f"https://{ip}/invalid/rules.json"
+    respx.get(ip_url).respond(content="not-json")
+    
+    loader = PluginLoader()
+    with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
+        with pytest.raises(PluginLoadError, match="invalid"):
+            loader.load(url)
+
+def test_plugin_loader_ssrf_protection(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    loader = PluginLoader()
+    
+    # Test HTTP (unsafe)
+    with pytest.raises(PluginLoadError, match="MUST use HTTPS"):
+        loader.load("http://trusted.com/rules.json")
+        
+    # Test Private/Non-Global IPs
+    with patch("socket.getaddrinfo") as mock_dns:
+        # Private IP
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("192.168.1.1", 443))]
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://internal.service/rules.json")
+            
+        # Loopback
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("127.0.0.1", 443))]
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://localhost.localdomain/rules.json")
+            
+        # CGNAT (Standard block via is_global=False in Python 3.14)
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("100.64.1.1", 443))]
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://cgnat.test/rules.json")
+
+        # Multicast
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("224.0.0.1", 443))]
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://multicast.test/rules.json")
+
+        # Empty result (Line 101 coverage)
+        mock_dns.return_value = []
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://empty.test/rules.json")
+
+    # Defense-in-depth CGNAT check coverage (Line 119-120)
+    # We mock is_global to be True for a CGNAT IP to force the redundant check to trigger
+    with patch("socket.getaddrinfo") as mock_dns:
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("100.64.1.1", 443))]
+        with patch("ipaddress.IPv4Address.is_global", new_callable=PropertyMock) as mock_global:
+            mock_global.return_value = True
+            with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+                loader.load("https://cgnat-force.test/rules.json")
+            
+    # Test malformed / empty hostname
+    with pytest.raises(PluginLoadError, match="Invalid remote plugin URL"):
+        loader.load("https:///rules.json")
+
+def test_plugin_loader_dns_failure(monkeypatch):
+    monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    loader = PluginLoader()
+    with patch("socket.getaddrinfo", side_effect=Exception("DNS Error")):
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://nonexistent.void/rules.json")
 
 
 def test_condition_group_requires_condition():
@@ -666,6 +796,29 @@ def test_api_plugins_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     response = client.post("/v1/plugins/reload")
     # Fail closed: should be 401
     assert response.status_code == 401
+    assert "not configured" in response.json()["detail"]
+
+def test_api_jwks_endpoint() -> None:
+    client = TestClient(app)
+    response = client.get("/.well-known/jwks.json")
+    assert response.status_code == 200
+    data = response.json()
+    assert "keys" in data
+    assert len(data["keys"]) > 0
+    key = data["keys"][0]
+    assert key["kid"] == "axg-key-001"
+    assert key["kty"] == "RSA"
+    assert key["alg"] == "RS256"
+    assert "n" in key
+    assert "e" in key
+
+def test_api_decisions_malformed_request() -> None:
+    client = TestClient(app)
+    # Missing action_type
+    bad_data = request_data()
+    del bad_data["action_type"]
+    response = client.post("/v1/decisions", json=bad_data)
+    assert response.status_code == 422 # Pydantic validation error
 
 def test_api_decisions_token_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     from axg import engine
@@ -733,3 +886,14 @@ def test_api_logs_decision_request(caplog):
     assert request_logged["execution_id"] == "test_exec_api_log"
     assert response_logged["event"] == "axg.decision.response_emitted"
     assert response_logged["execution_id"] == "test_exec_api_log"
+
+
+def test_api_jwks():
+    client = TestClient(app)
+    response = client.get("/.well-known/jwks.json")
+    assert response.status_code == 200
+    data = response.json()
+    assert "keys" in data
+    assert len(data["keys"]) == 1
+    assert data["keys"][0]["kid"] == "axg-key-001"
+    assert data["keys"][0]["kty"] == "RSA"

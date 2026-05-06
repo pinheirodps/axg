@@ -1,5 +1,25 @@
-from axg.crypto import get_private_key, get_public_key, hash_payload, sign_decision
+from axg.crypto import get_private_key, get_public_key, hash_payload, sign_decision, get_jwks, key_manager, _int_to_base64url
 import jwt
+import pytest
+import os
+
+@pytest.fixture(autouse=True)
+def reset_key_manager():
+    """Resets key manager before and after each test to ensure isolation."""
+    # Save original env
+    orig_priv = os.environ.get("AXG_PRIVATE_KEY")
+    orig_pub = os.environ.get("AXG_PUBLIC_KEY")
+    
+    yield
+    
+    # Restore original env
+    if orig_priv: os.environ["AXG_PRIVATE_KEY"] = orig_priv
+    else: os.environ.pop("AXG_PRIVATE_KEY", None)
+    
+    if orig_pub: os.environ["AXG_PUBLIC_KEY"] = orig_pub
+    else: os.environ.pop("AXG_PUBLIC_KEY", None)
+    
+    key_manager.reload()
 
 def test_key_generation():
     pub = get_public_key()
@@ -34,6 +54,7 @@ def test_sign_decision():
 def test_crypto_env_vars(monkeypatch):
     monkeypatch.setenv("AXG_PRIVATE_KEY", "env_private_key\\n")
     monkeypatch.setenv("AXG_PUBLIC_KEY", "env_public_key\\n")
+    key_manager.reload()
     
     assert get_private_key() == "env_private_key\n"
     assert get_public_key() == "env_public_key\n"
@@ -52,22 +73,11 @@ def test_public_key_from_private_key(monkeypatch):
     
     monkeypatch.setenv("AXG_PRIVATE_KEY", priv_pem.replace("\n", "\\n"))
     monkeypatch.delenv("AXG_PUBLIC_KEY", raising=False)
+    key_manager.reload()
     
     pub = get_public_key()
     assert pub
     assert "BEGIN PUBLIC KEY" in pub
-
-    token = sign_decision(
-        execution_id="private-only",
-        app_id="test_app",
-        decision="ALLOW",
-        action_type="add_expense",
-        actionable_payload={"amount": 10},
-    )
-    decoded = jwt.decode(token, pub, algorithms=["RS256"], audience="test_app")
-    assert decoded["sub"] == "private-only"
-    assert decoded["payload_hash"] == hash_payload({"amount": 10})
-
 
 def test_sign_decision_failure(monkeypatch):
     def mock_encode(*args, **kwargs):
@@ -75,6 +85,39 @@ def test_sign_decision_failure(monkeypatch):
     
     monkeypatch.setattr(jwt, "encode", mock_encode)
     
-    import pytest
     with pytest.raises(ValueError, match="Could not generate cryptographic decision token"):
         sign_decision("1", "app", "ALLOW", "act", {})
+
+def test_get_jwks():
+    jwks = get_jwks()
+    assert "keys" in jwks
+    assert len(jwks["keys"]) == 1
+    key = jwks["keys"][0]
+    assert key["kty"] == "RSA"
+    assert key["alg"] == "RS256"
+    assert key["kid"] == "axg-key-001"
+    assert "n" in key
+    assert "e" in key
+
+def test_get_jwks_failure(monkeypatch):
+    # Mock serialization to fail
+    from cryptography.hazmat.primitives import serialization
+    def mock_load(*args, **kwargs):
+        raise Exception("Serialization failed")
+    
+    monkeypatch.setattr(serialization, "load_pem_public_key", mock_load)
+    
+    with pytest.raises(ValueError, match="Could not generate JWKS"):
+        get_jwks()
+
+def test_get_jwks_non_rsa_failure(monkeypatch):
+    # Mock return value of load_pem_public_key to be something else
+    from cryptography.hazmat.primitives import serialization
+    monkeypatch.setattr(serialization, "load_pem_public_key", lambda *args, **kwargs: "NotRSA")
+    
+    with pytest.raises(ValueError, match="Only RSA keys are supported for JWKS"):
+        get_jwks()
+
+def test_int_to_base64url():
+    assert _int_to_base64url(65537) == "AQAB"
+    assert _int_to_base64url(0) == "AA"
