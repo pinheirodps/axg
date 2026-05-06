@@ -13,7 +13,6 @@ export interface AxgPassportClaims extends jose.JWTPayload {
 
 export interface VerificationOptions {
   appId: string;
-  axgBaseUrl?: string;
   allowedActionTypes?: string[];
 }
 

@@ -99,28 +99,38 @@ class PluginLoader:
             addr_info = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
             if not addr_info:
                 return None
-            
-            ips = list(set(info[4][0] for info in addr_info))
-            
-            # CGNAT range (Shared Address Space)
+
+            ips = sorted(list(set(info[4][0] for info in addr_info)))
+
+            # Shared Address Space (CGNAT) - 100.64.0.0/10
             cgnat_net = ipaddress.ip_network("100.64.0.0/10")
-            
+
             for ip in ips:
                 ip_obj = ipaddress.ip_address(ip)
-                
-                # 1. Must be a global public address
-                # is_global covers most, but we add explicit checks for defense-in-depth
-                if not ip_obj.is_global or ip_obj.is_multicast or ip_obj.is_reserved or ip_obj.is_link_local or ip_obj.is_unspecified:
-                    logger.warning(f"[AXG] Blocked unsafe/non-global IP for {hostname}: {ip}")
+
+                # 1. Strict Requirement: Must be a global public address
+                # This blocks private, loopback, link-local, multicast, etc.
+                if not ip_obj.is_global:
+                    logger.warning("[AXG] Blocked non-global IP for %s: %s", hostname, ip)
                     return None
-                
-                # 2. Block CGNAT (100.64.0.0/10)
+
+                # 2. Explicit Defense-in-Depth for private/reserved/special ranges
+                is_unsafe = (
+                    ip_obj.is_private or ip_obj.is_reserved or ip_obj.is_loopback
+                    or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified
+                )
+                if is_unsafe:
+                    logger.warning("[AXG] Blocked unsafe IP for %s: %s", hostname, ip)
+                    return None
+
+                # 3. Explicitly block CGNAT (Shared Address Space)
+                # Note: Some Python versions consider CGNAT global, so we block it explicitly.
                 if isinstance(ip_obj, ipaddress.IPv4Address) and ip_obj in cgnat_net:
-                    logger.warning(f"[AXG] Blocked CGNAT IP for {hostname}: {ip}")
+                    logger.warning("[AXG] Blocked CGNAT IP for %s: %s", hostname, ip)
                     return None
-            
-            # Return the first safe IP for pinning
+
+            # Return the first safe IP for pinning (sorted for determinism)
             return ips[0]
-        except Exception as e:
-            logger.error(f"[AXG] DNS resolution/validation failed for {hostname}: {e}")
+        except Exception:  # noqa: BLE001
+            logger.exception("[AXG] DNS resolution/validation failed for %s", hostname)
             return None

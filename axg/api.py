@@ -8,6 +8,7 @@ from fastapi import FastAPI, BackgroundTasks, Header, HTTPException
 from axg.engine import DecisionEngine
 from axg.models import DecisionRequest, DecisionResponse
 from axg.audit import audit_manager
+from axg.crypto import get_public_key, get_jwks, key_manager
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("uvicorn.error")
@@ -19,9 +20,6 @@ app = FastAPI(
 )
 
 engine = DecisionEngine()
-
-
-from axg.crypto import get_public_key, get_jwks, key_manager
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
@@ -66,7 +64,7 @@ def create_decision(request: DecisionRequest, background_tasks: BackgroundTasks)
                 "plugin_id": request.plugin_id,
                 "source": request.source,
                 "action_type": request.action_type,
-                "tenant_id": request.metadata.get("tenant_id"),
+                "tenant_id": request.tenant_id,
             },
             sort_keys=True,
         )
@@ -88,7 +86,7 @@ def create_decision(request: DecisionRequest, background_tasks: BackgroundTasks)
                 "execution_id": response.execution_id,
                 "decision": response.decision.value,
                 "plugin_version": response.plugin_version,
-                "tenant_id": request.metadata.get("tenant_id"),
+                "tenant_id": request.tenant_id,
             },
             sort_keys=True,
         )

@@ -13,11 +13,15 @@ def reset_key_manager():
     yield
     
     # Restore original env
-    if orig_priv: os.environ["AXG_PRIVATE_KEY"] = orig_priv
-    else: os.environ.pop("AXG_PRIVATE_KEY", None)
+    if orig_priv:
+        os.environ["AXG_PRIVATE_KEY"] = orig_priv
+    else:
+        os.environ.pop("AXG_PRIVATE_KEY", None)
     
-    if orig_pub: os.environ["AXG_PUBLIC_KEY"] = orig_pub
-    else: os.environ.pop("AXG_PUBLIC_KEY", None)
+    if orig_pub:
+        os.environ["AXG_PUBLIC_KEY"] = orig_pub
+    else:
+        os.environ.pop("AXG_PUBLIC_KEY", None)
     
     key_manager.reload()
 

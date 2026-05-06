@@ -87,10 +87,10 @@ class DecisionEngine:
             execution_id=request.execution_id,
             plugin_version=plugin.version_label,
             decision=decision,
-            decision_token=decision_token,
+            passport=decision_token,
             scores=scores,
             actionable_payload=actionable_payload,
-            human_readable_reason=reason,
+            reason=reason,
             audit_flags=audit_flags,
             rules_triggered=[
                 TriggeredRule(id=rule.id, decision=rule.decision, reason=rule.reason)
@@ -158,11 +158,19 @@ class DecisionEngine:
             else plugin.thresholds.high_risk_threshold
         )
         risk += sum(rule.risk_delta for rule in triggered_rules)
+        risk_score = self._clamp(risk)
+
+        risk_level = "low"
+        if risk_score >= plugin.thresholds.high_risk_threshold:
+            risk_level = "high"
+        elif risk_score >= 0.4:
+            risk_level = "medium"
 
         return DecisionScores(
             llm_confidence=request.llm.confidence,
             final_confidence=self._clamp(request.llm.confidence - confidence_penalty),
-            risk_score=self._clamp(risk),
+            risk_score=risk_score,
+            risk_level=risk_level,
             uncertainty_score=self._uncertainty_score(request),
         )
 
@@ -243,10 +251,11 @@ class DecisionEngine:
                 llm_confidence=request.llm.confidence,
                 final_confidence=0.0,
                 risk_score=1.0,
+                risk_level="high",
                 uncertainty_score=1.0,
             ),
             actionable_payload={},
-            human_readable_reason=f"AXG failed safe: {reason}",
+            reason=f"AXG failed safe: {reason}",
             audit_flags=["plugin_load_failed"],
             rules_triggered=[],
             metadata=request.metadata,
@@ -269,6 +278,7 @@ class DecisionEngine:
             "situation": request.metadata.get("situation")
             or (audit_flags[0] if audit_flags else response.decision.value.lower()),
             "execution_id": response.execution_id,
+            "tenant_id": request.tenant_id,
             "app_id": request.app_id,
             "plugin_id": request.plugin_id,
             "plugin_version": response.plugin_version,
@@ -278,10 +288,10 @@ class DecisionEngine:
             "llm_confidence": response.scores.llm_confidence,
             "final_confidence": response.scores.final_confidence,
             "risk_score": response.scores.risk_score,
+            "risk_level": response.scores.risk_level,
             "uncertainty_score": response.scores.uncertainty_score,
             "audit_flags": audit_flags,
             "rules_triggered": [rule.id for rule in response.rules_triggered],
-            "tenant_id": request.metadata.get("tenant_id"),
         }
 
     def _clamp(self, value: float) -> float:

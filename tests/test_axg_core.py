@@ -1,5 +1,4 @@
 import json
-import os
 import socket
 from io import StringIO
 from unittest.mock import patch, PropertyMock
@@ -25,6 +24,7 @@ from axg.rules import RuleEngine
 def request_data(**overrides):
     data = {
         "execution_id": "exec_001",
+        "tenant_id": "tenant_001",
         "app_id": "finnorte",
         "plugin_id": "finnorte",
         "user_id": "test_user_001",
@@ -57,7 +57,7 @@ def request_data(**overrides):
             "raw_output": {},
         },
         "metadata": {
-            "tenant_id": "tenant_001",
+            "flow": "test_flow",
         },
     }
     for key, value in overrides.items():
@@ -334,7 +334,7 @@ def test_uber_1500_whatsapp_requires_confirmation():
     assert response.decision == Decision.CONFIRM
     assert "high_value_transaction" in response.audit_flags
     assert "merchant_amount_anomaly" in response.audit_flags
-    assert "significantly higher" in response.human_readable_reason
+    assert "significantly higher" in response.reason
     assert response.scores.risk_score == 0.9
     assert response.scores.final_confidence == 0.48
     assert response.scores.uncertainty_score == 0.0
@@ -667,7 +667,7 @@ def test_missing_permission_blocks():
     )
     assert response.decision == Decision.BLOCK
     assert (
-        response.human_readable_reason
+        response.reason
         == "The proposed action is not permitted for this agent."
     )
 
@@ -708,7 +708,7 @@ def test_low_confidence_without_matching_rules_confirms():
 
     assert response.decision == Decision.CONFIRM
     assert (
-        response.human_readable_reason
+        response.reason
         == "The proposal requires confirmation before execution."
     )
 
@@ -834,10 +834,10 @@ def test_api_decisions_token_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["decision"] == "CONFIRM"
-    # Token should be omitted (or null)
-    assert data.get("decision_token") is None
+    # Passport should be omitted (or null)
+    assert data.get("passport") is None
     assert "decision_token_signing_failed" in data["audit_flags"]
-    assert "could not issue a decision token" in data["human_readable_reason"]
+    assert "could not issue a decision token" in data["reason"]
 
 
 def test_api_plugins_reload_auth(monkeypatch: pytest.MonkeyPatch) -> None:

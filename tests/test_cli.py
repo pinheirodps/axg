@@ -1,7 +1,6 @@
 import json
 import pytest
 import runpy
-from pathlib import Path
 from axg.cli import cmd_validate_plugin, cmd_simulate_decision, get_parser, main
 import argparse
 
@@ -67,7 +66,9 @@ def test_cmd_simulate_decision_success(tmp_path):
     
     payload_file = tmp_path / "request.json"
     payload_file.write_text(json.dumps({
+        "schema_version": "axg.decision_request.v1",
         "execution_id": "123",
+        "tenant_id": "tenant_001",
         "app_id": "app",
         "user_id": "user",
         "source": "api",
@@ -165,7 +166,9 @@ def test_cmd_simulate_decision_unexpected_error(tmp_path, monkeypatch):
     
     payload_file = tmp_path / "request.json"
     payload_file.write_text(json.dumps({
+        "schema_version": "axg.decision_request.v1",
         "execution_id": "123",
+        "tenant_id": "tenant_001",
         "app_id": "app",
         "user_id": "user",
         "source": "api",
