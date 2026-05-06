@@ -2,7 +2,7 @@ import json
 import os
 import socket
 from io import StringIO
-from unittest.mock import patch
+from unittest.mock import patch, PropertyMock
 
 import pytest
 import respx
@@ -221,7 +221,7 @@ def test_plugin_loader_ssrf_protection(monkeypatch):
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://localhost.localdomain/rules.json")
             
-        # CGNAT
+        # CGNAT (Standard block via is_global=False in Python 3.14)
         mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("100.64.1.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://cgnat.test/rules.json")
@@ -230,6 +230,20 @@ def test_plugin_loader_ssrf_protection(monkeypatch):
         mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("224.0.0.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
             loader.load("https://multicast.test/rules.json")
+
+        # Empty result (Line 101 coverage)
+        mock_dns.return_value = []
+        with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+            loader.load("https://empty.test/rules.json")
+
+    # Defense-in-depth CGNAT check coverage (Line 119-120)
+    # We mock is_global to be True for a CGNAT IP to force the redundant check to trigger
+    with patch("socket.getaddrinfo") as mock_dns:
+        mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("100.64.1.1", 443))]
+        with patch("ipaddress.IPv4Address.is_global", new_callable=PropertyMock) as mock_global:
+            mock_global.return_value = True
+            with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
+                loader.load("https://cgnat-force.test/rules.json")
             
     # Test malformed / empty hostname
     with pytest.raises(PluginLoadError, match="Invalid remote plugin URL"):
