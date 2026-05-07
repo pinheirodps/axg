@@ -36,7 +36,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: '18'
+        node-version: '20'
     - name: Install dependencies
       run: |
         cd sdks/axg-node-sdk
@@ -59,7 +59,7 @@ jobs:
       run: |
         cd sdks/axg-python-sdk
         pip install .
-        pip install pytest
+        pip install pytest pytest-asyncio
     - name: Run Python SDK Tests
       run: |
         cd sdks/axg-python-sdk
