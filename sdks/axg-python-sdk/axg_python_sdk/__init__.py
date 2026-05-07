@@ -105,6 +105,8 @@ class AxgClient:
         app_id: str,
         tenant_id: Optional[str] = None,
         allowed_action_types: Optional[List[str]] = None,
+        public_key: Optional[str] = None,
+        _signing_key: Any = None,
     ) -> Dict[str, Any]:
         """
         Verifies an AXG Decision Token (Passport) using the client's JWKS.
@@ -116,4 +118,6 @@ class AxgClient:
             tenant_id=tenant_id,
             allowed_action_types=allowed_action_types,
             jwks_url=self.jwks_url,
+            public_key=public_key,
+            _signing_key=_signing_key,
         )
