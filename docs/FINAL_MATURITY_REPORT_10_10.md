@@ -20,6 +20,7 @@ This report confirms that the AXG (Agent Execution Guard) has reached **10/10 te
 - **Async Core:** Fully non-blocking execution engine (FastAPI/AnyIO).
 - **Security-by-Design:** Fail-closed logic for all critical paths.
 - **SSRF Protection:** Hardened plugin loading and webhook delivery.
+- **Gateway Synergy:** Fully compatible with MUAI's new LLM Gateway, ensuring that model agnosticism is governed by AXG's security policies.
 
 #### C. SDK Maturity
 - **Dual-Support:** Node SDK supports ESM and CJS natively.
