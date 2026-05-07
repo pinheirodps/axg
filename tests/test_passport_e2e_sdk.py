@@ -1,44 +1,65 @@
 import json
 import pytest
-from axg.audit import AuditManager
-from axg.models import DecisionRequest, Decision, DecisionResponse
+import jwt
+from axg.models import DecisionRequest, Decision
 from axg.engine import DecisionEngine
+from axg.crypto import key_manager, hash_payload
 
-def test_passport_generation_and_internal_validation():
+@pytest.mark.asyncio
+async def test_passport_cryptographic_validation_e2e():
     """
-    E2E Proof: AXG generates a passport that can be validated.
-    This demonstrates the contract between AXG and its consumers (SDKs).
+    Rigor 10/10 Proof: AXG generates a Passport (JWT) and we validate it 
+    cryptographically using the public key, checking issuer, audience, and payload hash.
     """
     engine = DecisionEngine()
     
-    # 1. Simulate a request
+    # 1. Simulate a request with a specific payload
+    payload = {"amount": 100, "merchant": "Apple Store"}
     request = DecisionRequest(
-        execution_id="test_e2e_001",
-        tenant_id="finnorte",
-        app_id="muai",
+        execution_id="exec_rigor_10_10",
+        tenant_id="enterprise_client",
+        app_id="muai_console",
         plugin_id="finnorte",
-        action_type="categorize_transaction",
-        payload={"amount": 100},
-        llm={"confidence": 0.9}
+        source="test_runner",
+        action_type="create_expense",
+        payload=payload,
+        llm={"confidence": 0.95}
     )
     
-    # 2. Process decision
-    response = engine.decide(request)
+    # 2. Process decision to get the Passport (AWAITED)
+    response = await engine.decide(request)
+    passport_jwt = response.passport
     
-    # 3. Verify passport exists and is signed
-    assert response.passport is not None
-    assert "signature" in response.passport
-    assert response.passport["execution_id"] == "test_e2e_001"
-    
-    # 4. (SDK Simulation) Validate the passport
-    # In a real SDK, this would verify the cryptographic signature.
-    # Here we verify the structure matches the SDK expectations.
-    passport = response.passport
-    required_fields = ["execution_id", "decision", "risk_level", "timestamp", "signature", "public_key"]
-    for field in required_fields:
-        assert field in passport, f"Missing field {field} in passport"
+    assert passport_jwt is not None
+    print(f"\n[PASSPORT E2E] Generated JWT: {passport_jwt[:20]}...")
 
-    print("\n[PASSPORT E2E] Passport generated and validated successfully.")
+    # 3. REAL CRYPTOGRAPHIC VALIDATION (SDK Logic)
+    try:
+        decoded = jwt.decode(
+            passport_jwt,
+            key_manager.public_key,
+            algorithms=["RS256"],
+            audience="muai_console",
+            issuer="axg-engine"
+        )
+        
+        # 4. Validate Claims
+        assert decoded["sub"] == "exec_rigor_10_10"
+        assert decoded["decision"] == Decision.ALLOW.value
+        assert decoded["action_type"] == "create_expense"
+        
+        # 5. Integrity Check (Payload Hash)
+        local_hash = hash_payload(response.actionable_payload)
+        assert decoded["payload_hash"] == local_hash
+        
+        print("[PASSPORT E2E] Cryptographic signature VERIFIED.")
+        print("[PASSPORT E2E] Audience and Issuer VERIFIED.")
+        print("[PASSPORT E2E] Payload Integrity (Hash) VERIFIED.")
+        
+    except Exception as e:
+        pytest.fail(f"Cryptographic validation failed: {e}")
 
 if __name__ == "__main__":
-    test_passport_generation_and_internal_validation()
+    # For direct execution
+    import asyncio
+    asyncio.run(test_passport_cryptographic_validation_e2e())

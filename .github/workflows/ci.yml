@@ -45,7 +45,7 @@ jobs:
       run: |
         cd sdks/axg-node-sdk
         npm run build
-        npm test || echo "No tests defined yet"
+        npm test
 
   test-python-sdk:
     runs-on: ubuntu-latest
@@ -63,4 +63,4 @@ jobs:
     - name: Run Python SDK Tests
       run: |
         cd sdks/axg-python-sdk
-        pytest || echo "No tests defined yet"
+        pytest
