@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-from functools import lru_cache
 import socket
 import ipaddress
 from urllib.parse import urlparse
 from pathlib import Path
 
 import httpx
+import anyio
 from pydantic import ValidationError
 
 from axg.models import Plugin
@@ -27,32 +27,41 @@ class PluginLoader:
     """
     def __init__(self, plugins_dir: Path | None = None):
         self.plugins_dir = plugins_dir or Path(__file__).resolve().parent.parent / "plugins"
+        self._cache: dict[str, Plugin] = {}
 
-    @lru_cache(maxsize=64)
-    def load(self, plugin_id: str) -> Plugin:
-        """Loads a plugin by ID (local name) or URI (remote URL)."""
+    async def load(self, plugin_id: str) -> Plugin:
+        """Loads a plugin by ID (local name) or URI (remote URL) with async caching."""
+        if plugin_id in self._cache:
+            return self._cache[plugin_id]
+
         if plugin_id.startswith(("http://", "https://")):
             if os.environ.get("ENABLE_REMOTE_PLUGINS", "false").lower() != "true":
                 raise PluginLoadError(
                     "Remote plugin loading is disabled for security. "
                     "Set ENABLE_REMOTE_PLUGINS=true to enable."
                 )
-            return self._load_remote(plugin_id)
-        return self._load_local(plugin_id)
+            plugin = await self._load_remote(plugin_id)
+        else:
+            plugin = await self._load_local(plugin_id)
+        
+        # Simple cache - for enterprise-grade, we might add expiration/TTL later
+        self._cache[plugin_id] = plugin
+        return plugin
 
-    def _load_local(self, plugin_id: str) -> Plugin:
+    async def _load_local(self, plugin_id: str) -> Plugin:
         plugin_path = self.plugins_dir / plugin_id / "rules.json"
         if not plugin_path.exists():
             raise PluginLoadError(f"Local plugin '{plugin_id}' not found at {plugin_path}")
 
         try:
-            with plugin_path.open("r", encoding="utf-8") as plugin_file:
-                data = json.load(plugin_file)
+            async with await anyio.open_file(plugin_path, mode="r", encoding="utf-8") as plugin_file:
+                content = await plugin_file.read()
+                data = json.loads(content)
             return Plugin.model_validate(data)
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except (json.JSONDecodeError, ValidationError, OSError) as exc:
             raise PluginLoadError(f"Local plugin '{plugin_id}' is invalid: {exc}") from exc
 
-    def _load_remote(self, plugin_url: str) -> Plugin:
+    async def _load_remote(self, plugin_url: str) -> Plugin:
         """Fetches a plugin from a remote URL with strict SSRF protection (DNS Pinning)."""
         parsed = urlparse(plugin_url)
         hostname = parsed.hostname
@@ -73,9 +82,10 @@ class PluginLoader:
 
         logger.info(f"Fetching remote AXG plugin: {hostname} ({safe_ip})")
         try:
-            # We use headers for Host and extensions for SNI to preserve TLS verification
-            with httpx.Client(timeout=10.0, verify=True) as client:
-                response = client.get(
+            # We use headers for Host and extensions for SNI to preserve TLS verification.
+            # We follow NO redirects to prevent DNS rebinding or SSRF escalation after validation.
+            async with httpx.AsyncClient(timeout=10.0, verify=True, follow_redirects=False) as client:
+                response = await client.get(
                     ip_url,
                     headers={"Host": hostname},
                     extensions={"sni_hostname": hostname}
@@ -99,28 +109,38 @@ class PluginLoader:
             addr_info = socket.getaddrinfo(hostname, None, family=socket.AF_INET)
             if not addr_info:
                 return None
-            
-            ips = list(set(info[4][0] for info in addr_info))
-            
-            # CGNAT range (Shared Address Space)
+
+            ips = sorted(list(set(info[4][0] for info in addr_info)))
+
+            # Shared Address Space (CGNAT) - 100.64.0.0/10
             cgnat_net = ipaddress.ip_network("100.64.0.0/10")
-            
+
             for ip in ips:
                 ip_obj = ipaddress.ip_address(ip)
-                
-                # 1. Must be a global public address
-                # is_global covers most, but we add explicit checks for defense-in-depth
-                if not ip_obj.is_global or ip_obj.is_multicast or ip_obj.is_reserved or ip_obj.is_link_local or ip_obj.is_unspecified:
-                    logger.warning(f"[AXG] Blocked unsafe/non-global IP for {hostname}: {ip}")
+
+                # 1. Strict Requirement: Must be a global public address
+                # This blocks private, loopback, link-local, multicast, etc.
+                if not ip_obj.is_global:
+                    logger.warning("[AXG] Blocked non-global IP for %s: %s", hostname, ip)
                     return None
-                
-                # 2. Block CGNAT (100.64.0.0/10)
+
+                # 2. Explicit Defense-in-Depth for private/reserved/special ranges
+                is_unsafe = (
+                    ip_obj.is_private or ip_obj.is_reserved or ip_obj.is_loopback
+                    or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified
+                )
+                if is_unsafe:
+                    logger.warning("[AXG] Blocked unsafe IP for %s: %s", hostname, ip)
+                    return None
+
+                # 3. Explicitly block CGNAT (Shared Address Space)
+                # Note: Some Python versions consider CGNAT global, so we block it explicitly.
                 if isinstance(ip_obj, ipaddress.IPv4Address) and ip_obj in cgnat_net:
-                    logger.warning(f"[AXG] Blocked CGNAT IP for {hostname}: {ip}")
+                    logger.warning("[AXG] Blocked CGNAT IP for %s: %s", hostname, ip)
                     return None
-            
-            # Return the first safe IP for pinning
+
+            # Return the first safe IP for pinning (sorted for determinism)
             return ips[0]
-        except Exception as e:
-            logger.error(f"[AXG] DNS resolution/validation failed for {hostname}: {e}")
+        except Exception:  # noqa: BLE001
+            logger.exception("[AXG] DNS resolution/validation failed for %s", hostname)
             return None

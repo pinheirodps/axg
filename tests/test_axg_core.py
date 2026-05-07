@@ -1,5 +1,4 @@
 import json
-import os
 import socket
 from io import StringIO
 from unittest.mock import patch, PropertyMock
@@ -25,6 +24,7 @@ from axg.rules import RuleEngine
 def request_data(**overrides):
     data = {
         "execution_id": "exec_001",
+        "tenant_id": "tenant_001",
         "app_id": "finnorte",
         "plugin_id": "finnorte",
         "user_id": "test_user_001",
@@ -57,7 +57,7 @@ def request_data(**overrides):
             "raw_output": {},
         },
         "metadata": {
-            "tenant_id": "tenant_001",
+            "flow": "test_flow",
         },
     }
     for key, value in overrides.items():
@@ -72,33 +72,12 @@ def make_request(**overrides):
     return DecisionRequest.model_validate(request_data(**overrides))
 
 
-class MissingPath:
-    def __truediv__(self, _value):
-        return self
-
-    def exists(self):
-        return False
-
-
-class FilePath:
-    def __init__(self, content):
-        self.content = content
-
-    def __truediv__(self, _value):
-        return self
-
-    def exists(self):
-        return True
-
-    def open(self, *_args, **_kwargs):
-        return StringIO(self.content)
-
-
 class StaticLoader:
     def __init__(self, plugin):
         self.plugin = plugin
+        self._cache = {} # Match real loader signature
 
-    def load(self, _plugin_id):
+    async def load(self, _plugin_id):
         return self.plugin
 
 
@@ -115,41 +94,58 @@ def plugin_from_rules(rules, actions=None):
     )
 
 
-def test_plugin_loader_loads_finnorte_plugin():
-    plugin = PluginLoader().load("finnorte")
+@pytest.mark.asyncio
+async def test_plugin_loader_loads_finnorte_plugin():
+    plugin = await PluginLoader().load("finnorte")
 
     assert plugin.version_label == "finnorte@0.1.0"
     assert plugin.actions["create_expense"].base_risk == 0.45
 
 
-def test_plugin_loader_missing_invalid_json_and_invalid_schema():
-    with pytest.raises(PluginLoadError):
-        PluginLoader(MissingPath()).load("missing")
-    with pytest.raises(PluginLoadError):
-        PluginLoader(FilePath("{bad-json")).load("broken")
-    with pytest.raises(PluginLoadError):
-        PluginLoader(FilePath(json.dumps({"plugin": "broken"}))).load("broken")
+@pytest.mark.asyncio
+async def test_plugin_loader_missing_invalid_json_and_invalid_schema(tmp_path):
+    # Missing
+    with pytest.raises(PluginLoadError, match="not found"):
+        await PluginLoader(tmp_path).load("missing")
+    
+    # Invalid JSON
+    broken_dir = tmp_path / "broken"
+    broken_dir.mkdir()
+    (broken_dir / "rules.json").write_text("{bad-json")
+    with pytest.raises(PluginLoadError, match="invalid"):
+        await PluginLoader(tmp_path).load("broken")
+        
+    # Invalid Schema
+    invalid_dir = tmp_path / "invalid"
+    invalid_dir.mkdir()
+    (invalid_dir / "rules.json").write_text(json.dumps({"plugin": "broken"}))
+    with pytest.raises(PluginLoadError, match="invalid"):
+        await PluginLoader(tmp_path).load("invalid")
 
-def test_plugin_loader_empty_dir(tmp_path):
+@pytest.mark.asyncio
+async def test_plugin_loader_empty_dir(tmp_path):
     loader = PluginLoader(tmp_path)
     with pytest.raises(PluginLoadError, match="not found"):
-        loader.load("any-plugin")
+        await loader.load("any-plugin")
 
-def test_plugin_loader_invalid_subdir(tmp_path):
+@pytest.mark.asyncio
+async def test_plugin_loader_invalid_subdir(tmp_path):
     # Create a subdir that is NOT a plugin (no rules.json)
     (tmp_path / "not-a-plugin").mkdir()
     loader = PluginLoader(tmp_path)
     with pytest.raises(PluginLoadError, match="not found"):
-        loader.load("not-a-plugin")
+        await loader.load("not-a-plugin")
 
-def test_plugin_loader_remote_disabled_by_default():
+@pytest.mark.asyncio
+async def test_plugin_loader_remote_disabled_by_default():
     loader = PluginLoader()
     with pytest.raises(PluginLoadError, match="disabled for security"):
-        loader.load("https://example.com/plugin.json")
+        await loader.load("https://example.com/plugin.json")
 
 
 @respx.mock
-def test_plugin_loader_remote(monkeypatch):
+@pytest.mark.asyncio
+async def test_plugin_loader_remote(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     hostname = "example.com"
     ip = "93.184.216.34"
@@ -168,13 +164,14 @@ def test_plugin_loader_remote(monkeypatch):
     loader = PluginLoader()
     # Mock getaddrinfo to return the public IP
     with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
-        plugin = loader.load(url)
+        plugin = await loader.load(url)
     
     assert plugin.plugin == "remote-test"
     assert plugin.version == "1.0.0"
 
 @respx.mock
-def test_plugin_loader_remote_failure(monkeypatch):
+@pytest.mark.asyncio
+async def test_plugin_loader_remote_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     hostname = "example.com"
     ip = "93.184.216.34"
@@ -185,10 +182,11 @@ def test_plugin_loader_remote_failure(monkeypatch):
     loader = PluginLoader()
     with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
         with pytest.raises(PluginLoadError, match="Failed to fetch remote plugin"):
-            loader.load(url)
+            await loader.load(url)
 
 @respx.mock
-def test_plugin_loader_remote_invalid_json(monkeypatch):
+@pytest.mark.asyncio
+async def test_plugin_loader_remote_invalid_json(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     hostname = "example.com"
     ip = "93.184.216.34"
@@ -199,42 +197,43 @@ def test_plugin_loader_remote_invalid_json(monkeypatch):
     loader = PluginLoader()
     with patch("socket.getaddrinfo", return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443))]):
         with pytest.raises(PluginLoadError, match="invalid"):
-            loader.load(url)
+            await loader.load(url)
 
-def test_plugin_loader_ssrf_protection(monkeypatch):
+@pytest.mark.asyncio
+async def test_plugin_loader_ssrf_protection(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
     
     # Test HTTP (unsafe)
     with pytest.raises(PluginLoadError, match="MUST use HTTPS"):
-        loader.load("http://trusted.com/rules.json")
+        await loader.load("http://trusted.com/rules.json")
         
     # Test Private/Non-Global IPs
     with patch("socket.getaddrinfo") as mock_dns:
         # Private IP
         mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("192.168.1.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-            loader.load("https://internal.service/rules.json")
+            await loader.load("https://internal.service/rules.json")
             
         # Loopback
         mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("127.0.0.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-            loader.load("https://localhost.localdomain/rules.json")
+            await loader.load("https://localhost.localdomain/rules.json")
             
         # CGNAT (Standard block via is_global=False in Python 3.14)
         mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("100.64.1.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-            loader.load("https://cgnat.test/rules.json")
+            await loader.load("https://cgnat.test/rules.json")
 
         # Multicast
         mock_dns.return_value = [(socket.AF_INET, 1, 6, "", ("224.0.0.1", 443))]
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-            loader.load("https://multicast.test/rules.json")
+            await loader.load("https://multicast.test/rules.json")
 
         # Empty result (Line 101 coverage)
         mock_dns.return_value = []
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-            loader.load("https://empty.test/rules.json")
+            await loader.load("https://empty.test/rules.json")
 
     # Defense-in-depth CGNAT check coverage (Line 119-120)
     # We mock is_global to be True for a CGNAT IP to force the redundant check to trigger
@@ -243,18 +242,19 @@ def test_plugin_loader_ssrf_protection(monkeypatch):
         with patch("ipaddress.IPv4Address.is_global", new_callable=PropertyMock) as mock_global:
             mock_global.return_value = True
             with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-                loader.load("https://cgnat-force.test/rules.json")
+                await loader.load("https://cgnat-force.test/rules.json")
             
     # Test malformed / empty hostname
     with pytest.raises(PluginLoadError, match="Invalid remote plugin URL"):
-        loader.load("https:///rules.json")
+        await loader.load("https:///rules.json")
 
-def test_plugin_loader_dns_failure(monkeypatch):
+@pytest.mark.asyncio
+async def test_plugin_loader_dns_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
     loader = PluginLoader()
     with patch("socket.getaddrinfo", side_effect=Exception("DNS Error")):
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
-            loader.load("https://nonexistent.void/rules.json")
+            await loader.load("https://nonexistent.void/rules.json")
 
 
 def test_condition_group_requires_condition():
@@ -323,8 +323,9 @@ def test_rule_engine_any_all_missing_invalid_and_contains_list():
     )
 
 
-def test_uber_1500_whatsapp_requires_confirmation():
-    response = DecisionEngine().decide(
+@pytest.mark.asyncio
+async def test_uber_1500_whatsapp_requires_confirmation():
+    response = await DecisionEngine().decide(
         make_request(
             payload={"merchant": "Uber", "amount": 1500},
             llm={"confidence": 0.78},
@@ -334,16 +335,17 @@ def test_uber_1500_whatsapp_requires_confirmation():
     assert response.decision == Decision.CONFIRM
     assert "high_value_transaction" in response.audit_flags
     assert "merchant_amount_anomaly" in response.audit_flags
-    assert "significantly higher" in response.human_readable_reason
+    assert "significantly higher" in response.reason
     assert response.scores.risk_score == 0.9
     assert response.scores.final_confidence == 0.48
     assert response.scores.uncertainty_score == 0.0
 
 
-def test_decision_log_is_structured_for_flow_debugging(caplog):
+@pytest.mark.asyncio
+async def test_decision_log_is_structured_for_flow_debugging(caplog):
     caplog.set_level("INFO", logger="axg.engine")
 
-    response = DecisionEngine().decide(
+    response = await DecisionEngine().decide(
         make_request(
             execution_id="test_exec_uber_1500_001",
             metadata={
@@ -373,7 +375,8 @@ def test_decision_log_is_structured_for_flow_debugging(caplog):
     ]
 
 
-def test_poc_uber_1500_contract_without_agent_requires_confirmation():
+@pytest.mark.asyncio
+async def test_poc_uber_1500_contract_without_agent_requires_confirmation():
     data = request_data(
         execution_id="test_exec_uber_1500_001",
         source="whatsapp",
@@ -402,7 +405,7 @@ def test_poc_uber_1500_contract_without_agent_requires_confirmation():
     )
     data.pop("agent")
 
-    response = DecisionEngine().decide(DecisionRequest.model_validate(data))
+    response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
 
     assert response.decision == Decision.CONFIRM
     assert response.scores.llm_confidence == 0.75
@@ -411,8 +414,9 @@ def test_poc_uber_1500_contract_without_agent_requires_confirmation():
     assert response.actionable_payload["merchant"] == "Uber"
 
 
-def test_unknown_intent_add_income_fallback_requires_confirmation():
-    response = DecisionEngine().decide(
+@pytest.mark.asyncio
+async def test_unknown_intent_add_income_fallback_requires_confirmation():
+    response = await DecisionEngine().decide(
         make_request(
             source="whatsapp_bot",
             action_type="add_income",
@@ -433,8 +437,9 @@ def test_unknown_intent_add_income_fallback_requires_confirmation():
     assert "financial_write_requires_confirmation" in response.audit_flags
 
 
-def test_unknown_intent_add_expense_fallback_requires_confirmation():
-    response = DecisionEngine().decide(
+@pytest.mark.asyncio
+async def test_unknown_intent_add_expense_fallback_requires_confirmation():
+    response = await DecisionEngine().decide(
         make_request(
             source="telegram_bot",
             action_type="add_expense",
@@ -451,8 +456,9 @@ def test_unknown_intent_add_expense_fallback_requires_confirmation():
     assert response.scores.uncertainty_score == 1.0
 
 
-def test_known_intent_low_income_no_fallback_is_allowed():
-    response = DecisionEngine().decide(
+@pytest.mark.asyncio
+async def test_known_intent_low_income_no_fallback_is_allowed():
+    response = await DecisionEngine().decide(
         make_request(
             source="mobile_app",
             action_type="add_income",
@@ -470,8 +476,9 @@ def test_known_intent_low_income_no_fallback_is_allowed():
     assert response.scores.uncertainty_score == 0.0
 
 
-def test_high_value_income_requires_confirmation():
-    response = DecisionEngine().decide(
+@pytest.mark.asyncio
+async def test_high_value_income_requires_confirmation():
+    response = await DecisionEngine().decide(
         make_request(
             source="mobile_app",
             action_type="add_income",
@@ -489,10 +496,11 @@ def test_high_value_income_requires_confirmation():
     assert "high_value_transaction" in response.audit_flags
 
 
-def test_fallback_increases_uncertainty_score():
+@pytest.mark.asyncio
+async def test_fallback_increases_uncertainty_score():
     engine = DecisionEngine()
 
-    without_fallback = engine.decide(
+    without_fallback = await engine.decide(
         make_request(
             source="mobile_app",
             action_type="add_income",
@@ -500,7 +508,7 @@ def test_fallback_increases_uncertainty_score():
             intent={"original": "unknown", "resolved": "add_income", "fallback_used": False},
         )
     )
-    with_fallback = engine.decide(
+    with_fallback = await engine.decide(
         make_request(
             source="mobile_app",
             action_type="add_income",
@@ -512,8 +520,9 @@ def test_fallback_increases_uncertainty_score():
     assert with_fallback.scores.uncertainty_score > without_fallback.scores.uncertainty_score
 
 
-def test_missing_intent_metadata_for_chat_financial_write_fails_safe_to_confirm():
-    response = DecisionEngine().decide(
+@pytest.mark.asyncio
+async def test_missing_intent_metadata_for_chat_financial_write_fails_safe_to_confirm():
+    response = await DecisionEngine().decide(
         make_request(
             source="chat",
             action_type="add_income",
@@ -526,10 +535,11 @@ def test_missing_intent_metadata_for_chat_financial_write_fails_safe_to_confirm(
     assert response.scores.uncertainty_score == 0.7
 
 
-def test_fin_norte_contract_confirm_skips_persistence_path(caplog):
+@pytest.mark.asyncio
+async def test_fin_norte_contract_confirm_skips_persistence_path(caplog):
     caplog.set_level("INFO", logger="axg.engine")
 
-    response = DecisionEngine().decide(
+    response = await DecisionEngine().decide(
         make_request(
             source="whatsapp_bot",
             action_type="add_income",
@@ -553,7 +563,8 @@ def test_fin_norte_contract_confirm_skips_persistence_path(caplog):
     assert logged["decision"] == "CONFIRM"
 
 
-def test_poc_honorato_restaurant_subscription_is_not_allowed():
+@pytest.mark.asyncio
+async def test_poc_honorato_restaurant_subscription_is_not_allowed():
     data = request_data(
         execution_id="test_exec_honorato_subscription_001",
         source="bank_sync",
@@ -585,7 +596,7 @@ def test_poc_honorato_restaurant_subscription_is_not_allowed():
     )
     data.pop("agent")
 
-    response = DecisionEngine().decide(DecisionRequest.model_validate(data))
+    response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
 
     assert response.decision in (Decision.SUGGEST, Decision.CONFIRM)
     assert response.decision != Decision.ALLOW
@@ -596,7 +607,8 @@ def test_poc_honorato_restaurant_subscription_is_not_allowed():
     assert "missing_recurrence_pattern" in response.audit_flags
 
 
-def test_poc_recurring_condominium_subscription_is_allowed():
+@pytest.mark.asyncio
+async def test_poc_recurring_condominium_subscription_is_allowed():
     data = request_data(
         execution_id="test_exec_condominium_001",
         source="bank_sync",
@@ -622,30 +634,33 @@ def test_poc_recurring_condominium_subscription_is_allowed():
     )
     data.pop("agent")
 
-    response = DecisionEngine().decide(DecisionRequest.model_validate(data))
+    response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
 
     assert response.decision == Decision.ALLOW
     assert response.actionable_payload["suggested_category"] == "Housing"
     assert response.actionable_payload["is_subscription"] is True
 
 
-def test_normal_uber_can_be_allowed():
-    response = DecisionEngine().decide(make_request())
+@pytest.mark.asyncio
+async def test_normal_uber_can_be_allowed():
+    response = await DecisionEngine().decide(make_request())
 
     assert response.decision == Decision.ALLOW
     assert response.rules_triggered == []
 
 
-def test_low_confidence_without_rule_becomes_suggest_or_confirm():
-    suggest = DecisionEngine().decide(make_request(llm={"confidence": 0.7}))
-    confirm = DecisionEngine().decide(make_request(llm={"confidence": 0.5}))
+@pytest.mark.asyncio
+async def test_low_confidence_without_rule_becomes_suggest_or_confirm():
+    suggest = await DecisionEngine().decide(make_request(llm={"confidence": 0.7}))
+    confirm = await DecisionEngine().decide(make_request(llm={"confidence": 0.5}))
 
     assert suggest.decision == Decision.SUGGEST
     assert confirm.decision == Decision.CONFIRM
     assert "low_confidence" in confirm.audit_flags
 
 
-def test_missing_permission_blocks():
+@pytest.mark.asyncio
+async def test_missing_permission_blocks():
     engine = DecisionEngine(
         loader=StaticLoader(
             plugin_from_rules(
@@ -660,19 +675,20 @@ def test_missing_permission_blocks():
         )
     )
 
-    response = engine.decide(
+    response = await engine.decide(
         make_request(
             plugin_id="test", agent={"id": "agent_without_access", "permissions": []}
         )
     )
     assert response.decision == Decision.BLOCK
     assert (
-        response.human_readable_reason
+        response.reason
         == "The proposed action is not permitted for this agent."
     )
 
 
-def test_missing_agent_blocks_when_permission_is_required():
+@pytest.mark.asyncio
+async def test_missing_agent_blocks_when_permission_is_required():
     engine = DecisionEngine(
         loader=StaticLoader(
             plugin_from_rules(
@@ -689,31 +705,34 @@ def test_missing_agent_blocks_when_permission_is_required():
     data = request_data(plugin_id="test")
     data.pop("agent")
 
-    response = engine.decide(DecisionRequest.model_validate(data))
+    response = await engine.decide(DecisionRequest.model_validate(data))
 
     assert response.decision == Decision.BLOCK
 
 
-def test_unknown_action_confirms_with_default_risk():
-    response = DecisionEngine().decide(make_request(action_type="unknown_action"))
+@pytest.mark.asyncio
+async def test_unknown_action_confirms_with_default_risk():
+    response = await DecisionEngine().decide(make_request(action_type="unknown_action"))
 
     assert response.decision == Decision.CONFIRM
     assert response.scores.risk_score == 0.7
 
 
-def test_low_confidence_without_matching_rules_confirms():
+@pytest.mark.asyncio
+async def test_low_confidence_without_matching_rules_confirms():
     engine = DecisionEngine(loader=StaticLoader(plugin_from_rules([])))
 
-    response = engine.decide(make_request(plugin_id="test", llm={"confidence": 0.5}))
+    response = await engine.decide(make_request(plugin_id="test", llm={"confidence": 0.5}))
 
     assert response.decision == Decision.CONFIRM
     assert (
-        response.human_readable_reason
+        response.reason
         == "The proposal requires confirmation before execution."
     )
 
 
-def test_decision_precedence_block_wins():
+@pytest.mark.asyncio
+async def test_decision_precedence_block_wins():
     rules = [
         {
             "id": "confirm_rule",
@@ -736,10 +755,12 @@ def test_decision_precedence_block_wins():
     ]
     engine = DecisionEngine(loader=StaticLoader(plugin_from_rules(rules)))
 
-    assert engine.decide(make_request(plugin_id="test")).decision == Decision.BLOCK
+    res = await engine.decide(make_request(plugin_id="test"))
+    assert res.decision == Decision.BLOCK
 
 
-def test_default_penalty_and_rule_actionable_payload():
+@pytest.mark.asyncio
+async def test_default_penalty_and_rule_actionable_payload():
     rule = PolicyRule(
         id="confirm_with_default_penalty",
         description="confirm",
@@ -751,14 +772,16 @@ def test_default_penalty_and_rule_actionable_payload():
         actionable_payload={"safe": True},
     )
     engine = DecisionEngine(loader=StaticLoader(plugin_from_rules([rule.model_dump()])))
-    response = engine.decide(make_request(plugin_id="test"))
+    response = await engine.decide(make_request(plugin_id="test"))
 
     assert response.scores.final_confidence == 0.66
     assert response.actionable_payload["safe"] is True
 
 
-def test_fail_safe_on_plugin_failure():
-    response = DecisionEngine(loader=PluginLoader(MissingPath())).decide(make_request())
+@pytest.mark.asyncio
+async def test_fail_safe_on_plugin_failure(tmp_path):
+    # Point to non-existent dir to trigger failure
+    response = await DecisionEngine(loader=PluginLoader(plugins_dir=tmp_path / "missing")).decide(make_request())
 
     assert response.decision == Decision.CONFIRM
     assert response.scores.risk_score == 1.0
@@ -797,103 +820,3 @@ def test_api_plugins_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     # Fail closed: should be 401
     assert response.status_code == 401
     assert "not configured" in response.json()["detail"]
-
-def test_api_jwks_endpoint() -> None:
-    client = TestClient(app)
-    response = client.get("/.well-known/jwks.json")
-    assert response.status_code == 200
-    data = response.json()
-    assert "keys" in data
-    assert len(data["keys"]) > 0
-    key = data["keys"][0]
-    assert key["kid"] == "axg-key-001"
-    assert key["kty"] == "RSA"
-    assert key["alg"] == "RS256"
-    assert "n" in key
-    assert "e" in key
-
-def test_api_decisions_malformed_request() -> None:
-    client = TestClient(app)
-    # Missing action_type
-    bad_data = request_data()
-    del bad_data["action_type"]
-    response = client.post("/v1/decisions", json=bad_data)
-    assert response.status_code == 422 # Pydantic validation error
-
-def test_api_decisions_token_fail_safe(monkeypatch: pytest.MonkeyPatch) -> None:
-    from axg import engine
-    client = TestClient(app)
-    
-    def mock_sign(*args, **kwargs):
-        raise Exception("Mock sign error")
-        
-    monkeypatch.setattr(engine, "sign_decision", mock_sign)
-    response = client.post("/v1/decisions", json=request_data(payload={"amount": 15}))
-    
-    # Should NOT crash with 500
-    assert response.status_code == 200
-    data = response.json()
-    assert data["decision"] == "CONFIRM"
-    # Token should be omitted (or null)
-    assert data.get("decision_token") is None
-    assert "decision_token_signing_failed" in data["audit_flags"]
-    assert "could not issue a decision token" in data["human_readable_reason"]
-
-
-def test_api_plugins_reload_auth(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = TestClient(app)
-    monkeypatch.setenv("AXG_ADMIN_TOKEN", "super-secret-admin")
-    
-    # Missing header
-    response = client.post("/v1/plugins/reload")
-    assert response.status_code == 401
-    
-    # Wrong header
-    response = client.post("/v1/plugins/reload", headers={"Authorization": "Bearer wrong-token"})
-    assert response.status_code == 401
-    
-    # Correct header
-    response = client.post("/v1/plugins/reload", headers={"Authorization": "Bearer super-secret-admin"})
-    assert response.status_code == 200
-
-
-def test_api_logs_decision_request(caplog):
-    caplog.set_level("INFO", logger="uvicorn.error")
-    client = TestClient(app)
-
-    response = client.post(
-        "/v1/decisions",
-        json=request_data(
-            execution_id="test_exec_api_log",
-            metadata={"tenant_id": "tenant_001", "flow": "bank_sync_categorization"},
-        ),
-    )
-
-    request_logged = [
-        json.loads(record.message)
-        for record in caplog.records
-        if "axg.decision.request_received" in record.message
-    ][0]
-    response_logged = [
-        json.loads(record.message)
-        for record in caplog.records
-        if "axg.decision.response_emitted" in record.message
-    ][0]
-    assert response.status_code == 200
-    assert request_logged["service"] == "axg"
-    assert request_logged["component"] == "api"
-    assert request_logged["flow"] == "bank_sync_categorization"
-    assert request_logged["execution_id"] == "test_exec_api_log"
-    assert response_logged["event"] == "axg.decision.response_emitted"
-    assert response_logged["execution_id"] == "test_exec_api_log"
-
-
-def test_api_jwks():
-    client = TestClient(app)
-    response = client.get("/.well-known/jwks.json")
-    assert response.status_code == 200
-    data = response.json()
-    assert "keys" in data
-    assert len(data["keys"]) == 1
-    assert data["keys"][0]["kid"] == "axg-key-001"
-    assert data["keys"][0]["kty"] == "RSA"

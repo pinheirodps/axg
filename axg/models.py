@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Decision(str, Enum):
@@ -21,6 +21,13 @@ DECISION_PRECEDENCE = {
 }
 
 
+class ExecutionStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class AgentIdentity(BaseModel):
     id: str
     type: str = "agent"
@@ -34,7 +41,9 @@ class LlmSignal(BaseModel):
 
 
 class DecisionRequest(BaseModel):
+    schema_version: str = "axg.decision_request.v1"
     execution_id: str
+    tenant_id: str
     app_id: str
     plugin_id: str
     user_id: str | None = None
@@ -45,6 +54,7 @@ class DecisionRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     llm: LlmSignal = Field(default_factory=LlmSignal)
     intent: dict[str, Any] = Field(default_factory=dict)
+    shadow_mode: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -52,6 +62,7 @@ class DecisionScores(BaseModel):
     llm_confidence: float = Field(ge=0.0, le=1.0)
     final_confidence: float = Field(ge=0.0, le=1.0)
     risk_score: float = Field(ge=0.0, le=1.0)
+    risk_level: str = "low" # low, medium, high
     uncertainty_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
@@ -62,17 +73,55 @@ class TriggeredRule(BaseModel):
 
 
 class DecisionResponse(BaseModel):
-    schema_version: str = "axg.decision.v1"
+    schema_version: str = "axg.decision_response.v1"
     execution_id: str
     plugin_version: str
     decision: Decision
-    decision_token: str | None = None
+    passport: str | None = None
     scores: DecisionScores
-    actionable_payload: dict[str, Any]
-    human_readable_reason: str
-    audit_flags: list[str]
-    rules_triggered: list[TriggeredRule]
+    actionable_payload: dict[str, Any] = Field(default_factory=dict)
+    reason: str
+    audit_id: str | None = None
+    audit_flags: list[str] = Field(default_factory=list)
+    rules_triggered: list[TriggeredRule] = Field(default_factory=list)
+    shadow_mode: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ExecutionRecord(BaseModel):
+    schema_version: str = "execution_record.v1"
+    execution_id: str
+    tenant_id: str
+    app_id: str
+    source: str
+    requested_by: str | None = None
+    input_hash: str | None = None
+
+    # MUAI Insights
+    muai_schema_version: str = "muai.intent.v1"
+    muai_action_type: str | None = None
+    muai_confidence: float = 0.0
+    fallback_used: bool = False
+
+    # AXG Governance
+    axg_decision: str | None = None
+    risk_level: str = "low"
+    rules_triggered: list[str] = Field(default_factory=list)
+    audit_flags: list[str] = Field(default_factory=list)
+    passport_id: str | None = None
+    human_confirmation_required: bool = False
+    shadow_mode: bool = False
+
+    # Final Result
+    execution_status: ExecutionStatus = ExecutionStatus.PENDING
+    execution_result: Any = None
+    error: str | None = None
+    created_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class RuleCondition(BaseModel):
@@ -116,12 +165,15 @@ class ActionPolicy(BaseModel):
 
 
 class Plugin(BaseModel):
+    schema_version: str = "axg.plugin_manifest.v1"
     plugin: str
     version: str
     domain: str
     thresholds: Thresholds = Field(default_factory=Thresholds)
     actions: dict[str, ActionPolicy] = Field(default_factory=dict)
     rules: list[PolicyRule] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def version_label(self) -> str:

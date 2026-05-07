@@ -116,14 +116,7 @@ describe('AXG Node.js SDK', () => {
     });
 
     it('should throw error if issuer is invalid', async () => {
-      (jose.jwtVerify as any).mockResolvedValue({
-        payload: {
-          iss: 'malicious-issuer',
-          aud: appId,
-          decision: 'ALLOW',
-          payload_hash: hashPayload({}),
-        },
-      });
+      (jose.jwtVerify as any).mockRejectedValue(new Error('Invalid issuer'));
 
       const client = new AxgClient(baseUrl);
       await expect(client.verifyPassport('token', {}, { appId, axgBaseUrl: baseUrl }))

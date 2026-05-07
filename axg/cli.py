@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 
+import anyio
+
 from axg.engine import DecisionEngine
 from axg.models import DecisionRequest
 from axg.plugin_loader import PluginLoadError, PluginLoader
@@ -22,15 +24,16 @@ def get_parser() -> argparse.ArgumentParser:
     simulate_parser.add_argument("--plugin", required=True, help="Plugin ID to use")
     simulate_parser.add_argument("--payload", required=True, help="Path to the request payload JSON file")
     simulate_parser.add_argument("--dir", default=".", help="Base directory containing the plugins folder")
+    simulate_parser.add_argument("--shadow-mode", action="store_true", help="Run simulation in shadow mode")
 
     return parser
 
 
-def cmd_validate_plugin(args: argparse.Namespace) -> int:
+async def cmd_validate_plugin(args: argparse.Namespace) -> int:
     base_dir = Path(args.dir)
     try:
         loader = PluginLoader(base_dir)
-        plugin = loader.load(args.id)
+        plugin = await loader.load(args.id)
         print(f"Plugin '{plugin.plugin}' (Version {plugin.version}) is VALID.")
         print(f"Loaded {len(plugin.rules)} rules and {len(plugin.actions)} actions.")
         return 0
@@ -42,7 +45,7 @@ def cmd_validate_plugin(args: argparse.Namespace) -> int:
         return 1
 
 
-def cmd_simulate_decision(args: argparse.Namespace) -> int:
+async def cmd_simulate_decision(args: argparse.Namespace) -> int:
     base_dir = Path(args.dir)
     payload_path = Path(args.payload)
 
@@ -53,20 +56,25 @@ def cmd_simulate_decision(args: argparse.Namespace) -> int:
     try:
         loader = PluginLoader(base_dir)
         # Attempt to load plugin to fail fast if it's invalid
-        loader.load(args.plugin)
+        await loader.load(args.plugin)
     except PluginLoadError as e:
         print(f"Plugin Load Error: {e}", file=sys.stderr)
         return 1
 
     try:
+        # anyio doesn't provide a top-level sync read, so we use standard open
+        # but for consistency with the rest of the app, we could use await anyio.open_file
+        # but here we are in a CLI command that just started, so standard open is fine.
         with open(payload_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
         print(f"Invalid JSON in payload file: {e}", file=sys.stderr)
         return 1
 
-    # Overwrite plugin_id just in case
+    # Overwrite plugin_id and shadow_mode
     data["plugin_id"] = args.plugin
+    if args.shadow_mode:
+        data["shadow_mode"] = True
 
     try:
         request = DecisionRequest.model_validate(data)
@@ -76,7 +84,7 @@ def cmd_simulate_decision(args: argparse.Namespace) -> int:
 
     engine = DecisionEngine(loader=loader)
     try:
-        response = engine.decide(request)
+        response = await engine.decide(request)
         print(json.dumps(response.model_dump(mode="json"), indent=2))
         return 0
     except Exception as e:
@@ -84,14 +92,18 @@ def cmd_simulate_decision(args: argparse.Namespace) -> int:
         return 1
 
 
-def main() -> None:
+async def async_main() -> None:
     parser = get_parser()
     args = parser.parse_args()
 
     if args.command == "validate-plugin":
-        sys.exit(cmd_validate_plugin(args))
+        sys.exit(await cmd_validate_plugin(args))
     elif args.command == "simulate-decision":
-        sys.exit(cmd_simulate_decision(args))
+        sys.exit(await cmd_simulate_decision(args))
+
+
+def main() -> None:
+    anyio.run(async_main)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@ import json
 import logging
 from unittest.mock import AsyncMock
 
-import anyio
 import httpx
 import pytest
 

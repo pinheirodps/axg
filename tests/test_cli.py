@@ -1,9 +1,9 @@
 import json
 import pytest
 import runpy
-from pathlib import Path
-from axg.cli import cmd_validate_plugin, cmd_simulate_decision, get_parser, main
 import argparse
+import anyio
+from axg.cli import cmd_validate_plugin, cmd_simulate_decision, get_parser, main
 
 def test_parser_validate():
     parser = get_parser()
@@ -17,8 +17,15 @@ def test_parser_simulate():
     assert args.command == "simulate-decision"
     assert args.plugin == "finnorte"
     assert args.payload == "test.json"
+    assert args.shadow_mode is False
 
-def test_cmd_validate_plugin_success(tmp_path, monkeypatch):
+def test_parser_simulate_shadow():
+    parser = get_parser()
+    args = parser.parse_args(["simulate-decision", "--plugin", "finnorte", "--payload", "test.json", "--shadow-mode"])
+    assert args.shadow_mode is True
+
+@pytest.mark.asyncio
+async def test_cmd_validate_plugin_success(tmp_path, monkeypatch):
     plugin_dir = tmp_path / "plugins" / "test_plugin"
     plugin_dir.mkdir(parents=True)
     
@@ -39,13 +46,15 @@ def test_cmd_validate_plugin_success(tmp_path, monkeypatch):
     }))
     
     args = argparse.Namespace(command="validate-plugin", id="test_plugin", dir=str(tmp_path / "plugins"))
-    assert cmd_validate_plugin(args) == 0
+    assert await cmd_validate_plugin(args) == 0
 
-def test_cmd_validate_plugin_failure(tmp_path):
+@pytest.mark.asyncio
+async def test_cmd_validate_plugin_failure(tmp_path):
     args = argparse.Namespace(command="validate-plugin", id="missing_plugin", dir=str(tmp_path / 'plugins'))
-    assert cmd_validate_plugin(args) == 1
+    assert await cmd_validate_plugin(args) == 1
 
-def test_cmd_simulate_decision_success(tmp_path):
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_success(tmp_path):
     plugin_dir = tmp_path / "plugins" / "test_plugin"
     plugin_dir.mkdir(parents=True)
     
@@ -67,7 +76,9 @@ def test_cmd_simulate_decision_success(tmp_path):
     
     payload_file = tmp_path / "request.json"
     payload_file.write_text(json.dumps({
+        "schema_version": "axg.decision_request.v1",
         "execution_id": "123",
+        "tenant_id": "tenant_001",
         "app_id": "app",
         "user_id": "user",
         "source": "api",
@@ -75,21 +86,24 @@ def test_cmd_simulate_decision_success(tmp_path):
         "payload": {"merchant": "Uber"}
     }))
     
-    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'))
-    assert cmd_simulate_decision(args) == 0
+    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'), shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 0
 
-def test_cmd_simulate_decision_missing_payload(tmp_path):
-    args = argparse.Namespace(command="simulate-decision", plugin="test", payload="missing.json", dir=str(tmp_path / 'plugins'))
-    assert cmd_simulate_decision(args) == 1
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_missing_payload(tmp_path):
+    args = argparse.Namespace(command="simulate-decision", plugin="test", payload="missing.json", dir=str(tmp_path / 'plugins'), shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 1
 
-def test_cmd_simulate_decision_plugin_load_error(tmp_path):
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_plugin_load_error(tmp_path):
     payload_file = tmp_path / "request.json"
     payload_file.write_text("{}")
     
-    args = argparse.Namespace(command="simulate-decision", plugin="missing_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'))
-    assert cmd_simulate_decision(args) == 1
+    args = argparse.Namespace(command="simulate-decision", plugin="missing_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'), shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 1
 
-def test_cmd_simulate_decision_invalid_json(tmp_path):
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_invalid_json(tmp_path):
     plugin_dir = tmp_path / "plugins" / "test_plugin"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "rules.json").write_text(json.dumps({
@@ -103,10 +117,11 @@ def test_cmd_simulate_decision_invalid_json(tmp_path):
     payload_file = tmp_path / "request.json"
     payload_file.write_text("{bad json")
     
-    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'))
-    assert cmd_simulate_decision(args) == 1
+    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'), shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 1
 
-def test_cmd_simulate_decision_invalid_schema(tmp_path):
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_invalid_schema(tmp_path):
     plugin_dir = tmp_path / "plugins" / "test_plugin"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "rules.json").write_text(json.dumps({
@@ -120,8 +135,8 @@ def test_cmd_simulate_decision_invalid_schema(tmp_path):
     payload_file = tmp_path / "request.json"
     payload_file.write_text('{"missing": "fields"}')
     
-    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'))
-    assert cmd_simulate_decision(args) == 1
+    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'), shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 1
 
 def test_main_validate(monkeypatch):
     monkeypatch.setattr("sys.argv", ["axg", "validate-plugin", "--id", "missing"])
@@ -135,24 +150,25 @@ def test_main_simulate(monkeypatch):
         main()
     assert e.value.code == 1
 
-
 def test_module_entrypoint(monkeypatch):
     monkeypatch.setattr("sys.argv", ["axg", "validate-plugin", "--id", "missing"])
     with pytest.raises(SystemExit) as e:
         runpy.run_module("axg.cli", run_name="__main__")
     assert e.value.code == 1
 
-def test_cmd_validate_plugin_unexpected_error(tmp_path, monkeypatch):
-    def mock_load(*args, **kwargs):
+@pytest.mark.asyncio
+async def test_cmd_validate_plugin_unexpected_error(tmp_path, monkeypatch):
+    async def mock_load(*args, **kwargs):
         raise RuntimeError("Unexpected boom")
     
     from axg.plugin_loader import PluginLoader
     monkeypatch.setattr(PluginLoader, "load", mock_load)
     
     args = argparse.Namespace(command="validate-plugin", id="test", dir=str(tmp_path / 'plugins'))
-    assert cmd_validate_plugin(args) == 1
+    assert await cmd_validate_plugin(args) == 1
 
-def test_cmd_simulate_decision_unexpected_error(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_unexpected_error(tmp_path, monkeypatch):
     plugin_dir = tmp_path / "plugins" / "test_plugin"
     plugin_dir.mkdir(parents=True)
     (plugin_dir / "rules.json").write_text(json.dumps({
@@ -165,7 +181,9 @@ def test_cmd_simulate_decision_unexpected_error(tmp_path, monkeypatch):
     
     payload_file = tmp_path / "request.json"
     payload_file.write_text(json.dumps({
+        "schema_version": "axg.decision_request.v1",
         "execution_id": "123",
+        "tenant_id": "tenant_001",
         "app_id": "app",
         "user_id": "user",
         "source": "api",
@@ -173,11 +191,33 @@ def test_cmd_simulate_decision_unexpected_error(tmp_path, monkeypatch):
         "payload": {}
     }))
     
-    def mock_decide(*args, **kwargs):
+    async def mock_decide(*args, **kwargs):
         raise RuntimeError("Engine boom")
     
     from axg.engine import DecisionEngine
     monkeypatch.setattr(DecisionEngine, "decide", mock_decide)
     
-    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'))
-    assert cmd_simulate_decision(args) == 1
+    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), dir=str(tmp_path / 'plugins'), shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 1
+
+@pytest.mark.asyncio
+async def test_cmd_simulate_decision_shadow_mode(tmp_path, capsys):
+    plugin_dir = tmp_path / "plugins" / "test_plugin"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "rules.json").write_text(json.dumps({
+        "plugin": "test_plugin", "version": "1.0.0", "domain": "test",
+        "actions": {"create": {"required_permissions": [], "base_risk": 0.1}},
+        "rules": []
+    }))
+    payload_file = tmp_path / "request.json"
+    payload_file.write_text(json.dumps({
+        "schema_version": "axg.decision_request.v1", "execution_id": "1", "tenant_id": "t",
+        "app_id": "a", "user_id": "u", "source": "api", "action_type": "create", "payload": {}
+    }))
+    
+    args = argparse.Namespace(command="simulate-decision", plugin="test_plugin", payload=str(payload_file), 
+                              dir=str(tmp_path / 'plugins'), shadow_mode=True)
+    assert await cmd_simulate_decision(args) == 0
+    captured = capsys.readouterr()
+    response = json.loads(captured.out)
+    assert response["shadow_mode"] is True
