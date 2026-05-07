@@ -10,13 +10,15 @@ from axg.models import (
     DecisionRequest,
     DecisionResponse,
     DecisionScores,
+    ExecutionRecord,
+    ExecutionStatus,
     Plugin,
     PolicyRule,
     TriggeredRule,
 )
 from axg.plugin_loader import PluginLoader, PluginLoadError
 from axg.rules import RuleEngine
-from axg.crypto import sign_decision
+from axg.crypto import sign_decision, hash_payload
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +50,13 @@ class DecisionEngine:
         self.loader = loader or PluginLoader()
         self.rules = rules or RuleEngine()
 
-    def decide(self, request: DecisionRequest) -> DecisionResponse:
+    async def decide(self, request: DecisionRequest) -> DecisionResponse:
+        """Evaluates a decision request against the appropriate plugin policies asynchronously."""
         try:
-            plugin = self.loader.load(request.plugin_id)
+            plugin = await self.loader.load(request.plugin_id)
         except PluginLoadError as exc:
             logger.exception("AXG plugin load failed: %s", request.plugin_id)
-            return self._fail_safe(request, str(exc))
+            return await self._fail_safe(request, str(exc))
 
         triggered_rules = self.rules.evaluate_rules(plugin.rules, request.model_dump())
         scores = self._scores(plugin, request, triggered_rules)
@@ -62,6 +65,7 @@ class DecisionEngine:
         actionable_payload = self._actionable_payload(request, triggered_rules)
         token_signing_failed = False
         try:
+            # Cryptographic signing is CPU-bound but fast, remains sync
             decision_token = sign_decision(
                 execution_id=request.execution_id,
                 app_id=request.app_id,
@@ -96,6 +100,7 @@ class DecisionEngine:
                 TriggeredRule(id=rule.id, decision=rule.decision, reason=rule.reason)
                 for rule in triggered_rules
             ],
+            shadow_mode=request.shadow_mode,
             metadata=request.metadata,
         )
         logger.info(json.dumps(self.get_decision_log(request, response), sort_keys=True))
@@ -240,9 +245,14 @@ class DecisionEngine:
             flags.append("fallback_used")
         if self._is_financial_write(request) and scores.uncertainty_score >= 0.7:
             flags.append("financial_write_requires_confirmation")
+        
+        if request.shadow_mode:
+            flags.append("shadow_mode_active")
+            
         return list(dict.fromkeys(flags))
 
-    def _fail_safe(self, request: DecisionRequest, reason: str) -> DecisionResponse:
+    async def _fail_safe(self, request: DecisionRequest, reason: str) -> DecisionResponse:
+        """Provides a safe CONFIRM response if policy evaluation fails."""
         response = DecisionResponse(
             execution_id=request.execution_id,
             plugin_version=f"{request.plugin_id}@unavailable",
@@ -264,6 +274,44 @@ class DecisionEngine:
             json.dumps(self.get_decision_log(request, response), sort_keys=True)
         )
         return response
+
+    def get_execution_record(
+        self, request: DecisionRequest, response: DecisionResponse
+    ) -> ExecutionRecord:
+        """Generates a complete ExecutionRecord for auditability."""
+        intent = request.intent or {}
+        
+        # Determine who requested this action
+        requested_by = request.user_id
+        if not requested_by and request.agent:
+            requested_by = request.agent.id
+
+        return ExecutionRecord(
+            execution_id=request.execution_id,
+            tenant_id=request.tenant_id,
+            app_id=request.app_id,
+            source=request.source,
+            requested_by=requested_by,
+            input_hash=hash_payload(request.payload),
+            
+            # MUAI Insights
+            muai_action_type=request.action_type,
+            muai_confidence=request.llm.confidence,
+            fallback_used=intent.get("fallback_used", False),
+            
+            # AXG Governance
+            axg_decision=response.decision.value,
+            risk_level=response.scores.risk_level,
+            rules_triggered=[rule.id for rule in response.rules_triggered],
+            audit_flags=response.audit_flags,
+            passport_id=response.passport,
+            human_confirmation_required=response.decision == Decision.CONFIRM,
+            
+            # Initial state for execution
+            execution_status=ExecutionStatus.PENDING,
+            shadow_mode=request.shadow_mode,
+            metadata=response.metadata,
+        )
 
     def get_decision_log(
         self, request: DecisionRequest, response: DecisionResponse
@@ -290,6 +338,7 @@ class DecisionEngine:
             "risk_score": response.scores.risk_score,
             "risk_level": response.scores.risk_level,
             "uncertainty_score": response.scores.uncertainty_score,
+            "shadow_mode": response.shadow_mode,
             "audit_flags": audit_flags,
             "rules_triggered": [rule.id for rule in response.rules_triggered],
         }

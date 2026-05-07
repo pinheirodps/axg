@@ -9,6 +9,8 @@ from typing import Any, Protocol
 import httpx
 import anyio
 
+from axg.models import ExecutionRecord
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,9 +66,14 @@ class AuditManager:
             webhook_token = os.environ.get("AXG_AUDIT_WEBHOOK_TOKEN")
             self.sinks.append(WebhookAuditSink(webhook_url, webhook_token))
 
-    async def record_decision(self, decision_log: dict[str, Any]) -> None:
+    async def record_decision(self, decision_log: dict[str, Any] | ExecutionRecord) -> None:
+        if isinstance(decision_log, ExecutionRecord):
+            log_dict = decision_log.model_dump()
+        else:
+            log_dict = decision_log.copy()
+            
         for sink in self.sinks:
-            await sink.record(decision_log.copy())
+            await sink.record(log_dict.copy())
 
 
 audit_manager = AuditManager()
