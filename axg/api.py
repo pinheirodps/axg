@@ -46,8 +46,7 @@ async def reload_plugins(authorization: Annotated[str | None, Header()] = None) 
     if not authorization or authorization != f"Bearer {expected_token}":
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    # Cache clear is sync, but route is async for consistency
-    engine.loader._cache.clear()
+    engine.loader.clear_cache()
     return {"status": "reloaded"}
 
 

@@ -48,6 +48,10 @@ class PluginLoader:
         self._cache[plugin_id] = plugin
         return plugin
 
+    def clear_cache(self):
+        """Clear the plugin cache, allowing policies to be reloaded."""
+        self._cache.clear()
+
     async def _load_local(self, plugin_id: str) -> Plugin:
         plugin_path = self.plugins_dir / plugin_id / "rules.json"
         if not plugin_path.exists():
