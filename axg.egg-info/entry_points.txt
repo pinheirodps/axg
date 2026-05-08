@@ -1,0 +1,2 @@
+[console_scripts]
+axg = axg.cli:main

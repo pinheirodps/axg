@@ -41,7 +41,7 @@ def reload_plugins(authorization: Annotated[str | None, Header()] = None) -> dic
         raise HTTPException(status_code=401, detail="AXG_ADMIN_TOKEN is not configured")
     if not authorization or authorization != f"Bearer {expected_token}":
         raise HTTPException(status_code=401, detail="Unauthorized")
-    engine.loader.load.cache_clear()
+    engine.loader.clear_cache()
     return {"status": "reloaded"}
 
 

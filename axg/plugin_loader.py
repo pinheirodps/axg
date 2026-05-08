@@ -32,3 +32,6 @@ class PluginLoader:
         except ValidationError as exc:
             raise PluginLoadError(f"plugin '{plugin_id}' failed schema validation") from exc
 
+    def clear_cache(self):
+        """Clear the plugin cache, allowing policies to be reloaded."""
+        self.load.cache_clear()
