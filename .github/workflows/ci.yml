@@ -22,7 +22,7 @@ jobs:
         pip install pytest pytest-asyncio pytest-cov httpx
     - name: Run Core Tests
       run: |
-        python -m pytest --cov=axg --cov-report=xml
+        python -m pytest --cov=axg --cov-report=xml --cov-fail-under=98
     - name: Upload Core coverage
       uses: codecov/codecov-action@v3
       with:
