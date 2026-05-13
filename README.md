@@ -104,6 +104,7 @@ Decision precedence:
 ```json
 {
   "execution_id": "exec_001",
+  "tenant_id": "tenant_001",
   "app_id": "finnorte",
   "plugin_id": "finnorte",
   "agent": {
@@ -142,11 +143,11 @@ Decision precedence:
 
 ```json
 {
-  "schema_version": "axg.decision.v1",
+  "schema_version": "axg.decision_response.v1",
   "execution_id": "exec_001",
   "plugin_version": "finnorte@0.1.0",
   "decision": "CONFIRM",
-  "passport": null,
+  "passport": "eyJhbGciOiJSUzI1NiIs...",
   "scores": {
     "llm_confidence": 0.78,
     "final_confidence": 0.48,

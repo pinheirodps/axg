@@ -1,5 +1,6 @@
 {
   "execution_id": "exec_001",
+  "tenant_id": "tenant_001",
   "app_id": "finnorte",
   "plugin_id": "finnorte",
   "agent": {
