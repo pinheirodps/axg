@@ -77,7 +77,7 @@ class DecisionEngine:
             logger.error("AXG failed to generate decision token: %s", str(exc))
             decision_token = None
             token_signing_failed = True
-            audit_flags.append("decision_token_signing_failed")
+            audit_flags.append("passport_signing_failed")
             if DECISION_PRECEDENCE[decision] < DECISION_PRECEDENCE[Decision.CONFIRM]:
                 decision = Decision.CONFIRM
 
