@@ -1,5 +1,7 @@
 # AXG - Agent Execution Guard
 
+![AXG Hero](images/hero.png)
+
 Deterministic execution control for AI agent actions in real systems.
 
 > AI suggests. AXG decides.
@@ -23,7 +25,7 @@ AXG is designed to prevent blind automation by enforcing deterministic decisions
 
 ## How AXG Fits In
 
-![MUAI, OpenClaw and AXG control flow](docs/images/muai-axg-openclaw-control-flow.svg)
+![AXG Architecture](images/architecture.png)
 
 In the broader ecosystem, MUAI is the gateway for AI capabilities and model fallback. AXG remains the deterministic gate before writes, external actions, or operational truth updates.
 
