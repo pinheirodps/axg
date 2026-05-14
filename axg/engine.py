@@ -63,10 +63,11 @@ class DecisionEngine:
         decision = self._final_decision(plugin, request, triggered_rules, scores)
         audit_flags = self._audit_flags(triggered_rules, request, scores)
         actionable_payload = self._actionable_payload(request, triggered_rules)
+        passport = None
         token_signing_failed = False
         try:
             # Cryptographic signing is CPU-bound but fast, remains sync
-            decision_token = sign_decision(
+            passport = sign_decision(
                 execution_id=request.execution_id,
                 app_id=request.app_id,
                 decision=decision.value,
@@ -74,15 +75,15 @@ class DecisionEngine:
                 actionable_payload=actionable_payload
             )
         except Exception as exc:
-            logger.error("AXG failed to generate decision token: %s", str(exc))
-            decision_token = None
+            logger.error("AXG failed to generate passport: %s", str(exc))
+            passport = None
             token_signing_failed = True
             audit_flags.append("passport_signing_failed")
             if DECISION_PRECEDENCE[decision] < DECISION_PRECEDENCE[Decision.CONFIRM]:
                 decision = Decision.CONFIRM
 
         reason = (
-            "AXG could not issue a decision token. Confirmation is required before execution."
+            "AXG could not issue a passport. Confirmation is required before execution."
             if token_signing_failed and decision != Decision.BLOCK
             else self._reason(decision, triggered_rules, request, scores)
         )
@@ -91,7 +92,7 @@ class DecisionEngine:
             execution_id=request.execution_id,
             plugin_version=plugin.version_label,
             decision=decision,
-            passport=decision_token,
+            passport=passport,
             scores=scores,
             actionable_payload=actionable_payload,
             reason=reason,
