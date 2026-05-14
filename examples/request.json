@@ -1,0 +1,35 @@
+{
+  "execution_id": "exec_001",
+  "tenant_id": "tenant_001",
+  "app_id": "finnorte",
+  "plugin_id": "finnorte",
+  "agent": {
+    "id": "muai_whatsapp",
+    "type": "service",
+    "permissions": ["expense:create"]
+  },
+  "source": "whatsapp",
+  "action_type": "create_expense",
+  "payload": {
+    "merchant": "Uber",
+    "amount": 1500,
+    "currency": "EUR",
+    "proposed_action": "create_expense",
+    "proposed_category": "Transport"
+  },
+  "context": {},
+  "llm": {
+    "model": "llama-3.3-70b",
+    "confidence": 0.78,
+    "raw_output": {}
+  },
+  "intent": {
+    "original": "create_expense",
+    "resolved": "create_expense",
+    "fallback_used": false
+  },
+  "metadata": {
+    "tenant_id": "tenant_001",
+    "flow": "bot_expense_validation"
+  }
+}

@@ -56,7 +56,7 @@ AXG is **not**:
 - **Agent Identity**: Supports agent identity and permission-based authorization.
 - **Declarative Rules**: Applies rules (`plugins/<plugin_id>/rules.json`) without dynamic code execution.
 - **Deterministic Scoring**: Computes `llm_confidence`, `final_confidence`, `risk_score`, and `uncertainty_score`.
-- **AXG Passport**: Issues short-lived RS256 signed `decision_token` for `ALLOW` decisions.
+- **AXG Passport**: Issues short-lived RS256 signed `passport` for `ALLOW` decisions.
 - **Payload Integrity**: Mandatory SHA-256 hashing of actionable payloads to prevent tampering.
 - **Public Verification**: Exposes public keys through `/v1/certs`.
 - **Audit Sinks**: Structured logging, file (`JSONL`), and webhook audit sinks.
@@ -64,7 +64,7 @@ AXG is **not**:
 
 ## AXG Passport
 
-AXG Passport makes AXG a cryptographic trust layer. When AXG returns an `ALLOW` decision, it includes a short-lived JWT `decision_token` signed with RS256.
+AXG Passport makes AXG a cryptographic trust layer. When AXG returns an `ALLOW` decision, it includes a short-lived JWT `passport` signed with RS256.
 
 Consumer systems (e.g., FinNorte, Social Intent) verify this token before trusting an AI-proposed action. The token binds the authorized action to a deterministic hash of the payload, preventing tampering or unauthorized modification.
 
@@ -99,6 +99,94 @@ Decision precedence:
 - `GET /v1/certs`: Public key material for Passport verification.
 - `POST /v1/plugins/reload`: Administrative plugin reload (requires `AXG_ADMIN_TOKEN`).
 
+### Example Request
+
+```json
+{
+  "execution_id": "exec_001",
+  "tenant_id": "tenant_001",
+  "app_id": "finnorte",
+  "plugin_id": "finnorte",
+  "agent": {
+    "id": "muai_whatsapp",
+    "type": "service",
+    "permissions": ["expense:create"]
+  },
+  "source": "whatsapp",
+  "action_type": "create_expense",
+  "payload": {
+    "merchant": "Uber",
+    "amount": 1500,
+    "currency": "EUR",
+    "proposed_action": "create_expense",
+    "proposed_category": "Transport"
+  },
+  "context": {},
+  "llm": {
+    "model": "llama-3.3-70b",
+    "confidence": 0.78,
+    "raw_output": {}
+  },
+  "intent": {
+    "original": "create_expense",
+    "resolved": "create_expense",
+    "fallback_used": false
+  },
+  "metadata": {
+    "tenant_id": "tenant_001",
+    "flow": "bot_expense_validation"
+  }
+}
+```
+
+### Example Response
+
+```json
+{
+  "schema_version": "axg.decision_response.v1",
+  "execution_id": "exec_001",
+  "plugin_version": "finnorte@0.1.0",
+  "decision": "CONFIRM",
+  "passport": "eyJhbGciOiJSUzI1NiIs...",
+  "scores": {
+    "llm_confidence": 0.78,
+    "final_confidence": 0.48,
+    "risk_score": 0.9,
+    "risk_level": "high",
+    "uncertainty_score": 0.0
+  },
+  "actionable_payload": {
+    "proposed_action": "create_expense",
+    "merchant": "Uber",
+    "amount": 1500,
+    "currency": "EUR",
+    "suggested_category": "Transport"
+  },
+  "reason": "This transaction has a high financial value and requires user confirmation before saving. This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving.",
+  "audit_flags": [
+    "high_value_transaction",
+    "requires_user_confirmation",
+    "merchant_amount_anomaly"
+  ],
+  "rules_triggered": [
+    {
+      "id": "high_value_transaction",
+      "decision": "CONFIRM",
+      "reason": "This transaction has a high financial value and requires user confirmation before saving."
+    },
+    {
+      "id": "merchant_amount_anomaly",
+      "decision": "CONFIRM",
+      "reason": "This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving."
+    }
+  ],
+  "metadata": {
+    "tenant_id": "tenant_001",
+    "flow": "bot_expense_validation"
+  }
+}
+```
+
 ## Plugin Model
 
 Plugins are JSON-only policies. Path: `plugins/<plugin_id>/rules.json`
@@ -109,10 +197,10 @@ AXG ships with a CLI for local validation and simulation.
 
 ```bash
 # Validate a plugin
-axg validate-plugin --id finnorte --dir .
+axg validate-plugin --id finnorte --dir plugins
 
 # Simulate a decision
-axg simulate-decision --plugin finnorte --payload ./examples/request.json --dir .
+axg simulate-decision --plugin finnorte --payload ./examples/request.json --dir plugins
 ```
 
 ## Project Structure
