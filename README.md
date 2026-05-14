@@ -161,7 +161,7 @@ Decision precedence:
     "currency": "EUR",
     "suggested_category": "Transport"
   },
-  "reason": "High-value anomaly requires confirmation before execution.",
+  "reason": "This transaction has a high financial value and requires user confirmation before saving. This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving.",
   "audit_flags": [
     "high_value_transaction",
     "requires_user_confirmation",
@@ -169,9 +169,14 @@ Decision precedence:
   ],
   "rules_triggered": [
     {
-      "id": "high_value_transport_anomaly",
+      "id": "high_value_transaction",
       "decision": "CONFIRM",
-      "reason": "High value anomaly: this expense is significantly higher than expected and must be confirmed."
+      "reason": "This transaction has a high financial value and requires user confirmation before saving."
+    },
+    {
+      "id": "merchant_amount_anomaly",
+      "decision": "CONFIRM",
+      "reason": "This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving."
     }
   ],
   "metadata": {
