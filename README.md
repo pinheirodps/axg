@@ -152,6 +152,7 @@ Decision precedence:
     "llm_confidence": 0.78,
     "final_confidence": 0.48,
     "risk_score": 0.9,
+    "risk_level": "high",
     "uncertainty_score": 0.0
   },
   "actionable_payload": {
