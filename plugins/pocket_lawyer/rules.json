@@ -1,0 +1,214 @@
+{
+  "plugin": "pocket_lawyer",
+  "version": "0.1.0",
+  "domain": "legal",
+  "thresholds": {
+    "allow_min_confidence": 0.85,
+    "suggest_min_confidence": 0.70,
+    "high_risk_threshold": 0.75
+  },
+  "actions": {
+    "answer_client_question": { "base_risk": 0.30 },
+    "qualify_lead": { "base_risk": 0.20 },
+    "send_contract": { "base_risk": 0.60 },
+    "schedule_meeting": { "base_risk": 0.25 },
+    "save_original_document": { "base_risk": 0.10 },
+    "process_document": { "base_risk": 0.15 },
+    "delete_original_document": { "base_risk": 0.95 },
+    "generate_dossier": { "base_risk": 0.40 },
+    "send_sensitive_message": { "base_risk": 0.80 },
+    "generate_legal_draft": { "base_risk": 0.50 }
+  },
+  "rules": [
+    {
+      "id": "block_delete_original",
+      "description": "Never allow deletion of original client documents.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "eq",
+            "value": "delete_original_document"
+          }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "É terminantemente proibido excluir documentos originais enviados pelos clientes. A conformidade exige guarda integral do acervo bruto.",
+      "confidence_penalty": 1.0,
+      "risk_delta": 0.9,
+      "audit_flags": ["excluir_documento_original", "violation_data_retention"]
+    },
+    {
+      "id": "block_success_promise",
+      "description": "Never allow AI to promise 100% win or definitive outcomes.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.has_success_promise",
+            "operator": "eq",
+            "value": true
+          }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "O Código de Ética proíbe promessas irreais de êxito ou garantia de causas jurídicas. A análise humana de Salvador Vivas é obrigatória.",
+      "confidence_penalty": 0.8,
+      "risk_delta": 0.85,
+      "audit_flags": ["promessa_de_exito", "ethical_violation_guarantee"]
+    },
+    {
+      "id": "block_automatic_filing",
+      "description": "Never allow automatic court filing without lawyer signature.",
+      "condition": {
+        "all": [
+          {
+            "field": "payload.is_court_filing",
+            "operator": "eq",
+            "value": true
+          }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "Peticionamento automático sem validação humana e assinatura digital de advogado habilitado é estritamente bloqueado.",
+      "confidence_penalty": 0.9,
+      "risk_delta": 0.95,
+      "audit_flags": ["peticionamento_automatico", "unauthorized_practice_of_law"]
+    },
+    {
+      "id": "confirm_send_contract",
+      "description": "Sending legal contracts or fee agreements requires human review.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "eq",
+            "value": "send_contract"
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "O envio de contratos ou propostas de honorários requer confirmação expressa do advogado responsável antes de ser encaminhado ao cliente.",
+      "confidence_penalty": 0.1,
+      "risk_delta": 0.3,
+      "audit_flags": ["lead_qualificado_para_contrato", "requires_lawyer_approval"]
+    },
+    {
+      "id": "confirm_sensitive_message",
+      "description": "Messages with definitive legal impacts require confirmation.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "eq",
+            "value": "send_sensitive_message"
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "Mensagem com potencial impacto jurídico identificada. Revisão e autorização de Salvador Vivas obrigatórias.",
+      "confidence_penalty": 0.2,
+      "risk_delta": 0.4,
+      "audit_flags": ["resposta_com_impacto_juridico", "requires_lawyer_approval"]
+    },
+    {
+      "id": "confirm_low_confidence",
+      "description": "Low confidence answers require human confirmation.",
+      "condition": {
+        "all": [
+          {
+            "field": "context.confidence",
+            "operator": "lt",
+            "value": 0.70
+          }
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "A confiança calculada pelo motor de triagem é inferior ao limiar mínimo (70%). O caso deve ser revisado por um advogado.",
+      "confidence_penalty": 0.3,
+      "risk_delta": 0.25,
+      "audit_flags": ["baixa_confianca_juridica", "human_fallback"]
+    },
+    {
+      "id": "suggest_missing_document",
+      "description": "Suggest requesting missing documents from checklist.",
+      "condition": {
+        "all": [
+          {
+            "field": "context.has_missing_documents",
+            "operator": "eq",
+            "value": true
+          }
+        ]
+      },
+      "decision": "SUGGEST",
+      "reason": "O checklist documental aponta pendências para este tema. Sugerido envio da lista de faltantes ao lead.",
+      "confidence_penalty": 0.0,
+      "risk_delta": 0.05,
+      "audit_flags": ["pedir_documento_faltante"]
+    },
+    {
+      "id": "allow_save_original",
+      "description": "Allow automatic saving of original intake documents.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "eq",
+            "value": "save_original_document"
+          }
+        ]
+      },
+      "decision": "ALLOW",
+      "reason": "Salvar originais recebidos no Google Drive é uma operação segura e obrigatória para a conformidade.",
+      "confidence_penalty": 0.0,
+      "risk_delta": 0.0,
+      "audit_flags": ["salvar_original_no_drive", "safe_operation"]
+    },
+    {
+      "id": "allow_process_document",
+      "description": "Allow automatic PDF conversion and compression.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "eq",
+            "value": "process_document"
+          }
+        ]
+      },
+      "decision": "ALLOW",
+      "reason": "A conversão de imagens para PDF e compressão documental é permitida automaticamente.",
+      "confidence_penalty": 0.0,
+      "risk_delta": 0.0,
+      "audit_flags": ["converter_imagem_pdf", "safe_operation"]
+    },
+    {
+      "id": "allow_general_question",
+      "description": "Allow answering basic intake and information questions.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "eq",
+            "value": "answer_client_question"
+          },
+          {
+            "field": "payload.has_success_promise",
+            "operator": "neq",
+            "value": true
+          },
+          {
+            "field": "context.confidence",
+            "operator": "gte",
+            "value": 0.70
+          }
+        ]
+      },
+      "decision": "ALLOW",
+      "reason": "Pergunta informativa geral de triagem com alta confiança. Disparo liberado.",
+      "confidence_penalty": 0.0,
+      "risk_delta": 0.0,
+      "audit_flags": ["resposta_informativa", "safe_operation"]
+    }
+  ]
+}
