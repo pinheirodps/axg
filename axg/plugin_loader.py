@@ -6,7 +6,7 @@ import os
 import socket
 import ipaddress
 import re
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 
 import httpx
@@ -25,10 +25,44 @@ class PluginLoadError(Exception):
     pass
 
 
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def _url_parts(url: str) -> tuple[str, str, int | None, str] | None:
+    """(scheme, host, port, path) normalized for comparison; None if the URL has no host or a bad port."""
+    try:
+        parsed = urlparse(url.strip())
+        scheme = parsed.scheme.lower()
+        port = parsed.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    if not parsed.hostname:
+        return None
+    return scheme, parsed.hostname.lower(), port, parsed.path or "/"
+
+
 def _is_allowlisted(plugin_url: str) -> bool:
-    """Remote policies may only come from operator-approved URL prefixes."""
-    prefixes = [p.strip() for p in os.environ.get("AXG_REMOTE_PLUGIN_ALLOWLIST", "").split(",") if p.strip()]
-    return any(plugin_url.startswith(prefix) for prefix in prefixes)
+    """Remote policies may only come from operator-approved origins (and optional path prefixes).
+
+    Entries are parsed, never string-prefix matched: ``https://policies.example.com`` must not
+    admit ``https://policies.example.com.evil``. Scheme, host and port must be equal, and the path
+    must equal the entry path or sit below it on a segment boundary.
+    """
+    target = _url_parts(plugin_url)
+    if target is None:
+        return False
+    # Dot segments (plain or percent-encoded) could escape an allowlisted path on the server side
+    if any(segment in {".", ".."} for segment in unquote(target[3]).split("/")):
+        return False
+
+    for entry in os.environ.get("AXG_REMOTE_PLUGIN_ALLOWLIST", "").split(","):
+        allowed = _url_parts(entry) if entry.strip() else None
+        if allowed is None or allowed[:3] != target[:3]:
+            continue
+        base = allowed[3].rstrip("/")
+        if not base or target[3] == base or target[3].startswith(base + "/"):
+            return True
+    return False
 
 
 class PluginLoader:

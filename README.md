@@ -125,7 +125,7 @@ A Passport is only as trustworthy as the caller that asked for it, so:
 - A caller may only request decisions for its own `app_ids` (the Passport audience), otherwise `403`.
 - Agent permissions in the request are capped by the permissions granted to the caller.
 - Without `AXG_PRIVATE_KEY`, AXG refuses to start when `AXG_ENV=production`; elsewhere it uses ephemeral development keys.
-- Remote plugins are off by default and, when enabled, load only from `AXG_REMOTE_PLUGIN_ALLOWLIST` prefixes.
+- Remote plugins are off by default. When enabled, they load only from `AXG_REMOTE_PLUGIN_ALLOWLIST` entries. Each entry is parsed and must match exactly on scheme, host and port. A path in the entry scopes it on a segment boundary, and dot segments are rejected.
 
 Report vulnerabilities privately through GitHub Security Advisories on this repository, not in public issues.
 
@@ -139,7 +139,7 @@ Report vulnerabilities privately through GitHub Security Advisories on this repo
 | `AXG_PRIVATE_KEY` / `AXG_PUBLIC_KEY` | RS256 signing key (PEM; `\n` escapes accepted) |
 | `AXG_PREVIOUS_PUBLIC_KEYS` | JSON list of retired public keys still published in the JWKS during rotation |
 | `AXG_ADMIN_TOKEN` | Enables `POST /v1/plugins/reload` |
-| `ENABLE_REMOTE_PLUGINS`, `AXG_REMOTE_PLUGIN_ALLOWLIST` | Opt-in remote policies and the URL prefixes allowed |
+| `ENABLE_REMOTE_PLUGINS`, `AXG_REMOTE_PLUGIN_ALLOWLIST` | Opt-in remote policies; comma-separated allowed origins, optionally with a path (`https://policies.example.com/axg/`) |
 | `AXG_AUDIT_FILE`, `AXG_AUDIT_WEBHOOK`, `AXG_AUDIT_WEBHOOK_TOKEN` | Audit sinks |
 
 Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <key>`.

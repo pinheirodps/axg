@@ -1,7 +1,7 @@
 """Canonical JSON for payload hashing (Passport v2).
 
 Follows RFC 8785 (JCS) closely enough to be byte-identical across the Python core and the
-Python/Node SDKs: keys sorted, no whitespace, UTF-8 without escaping non-ASCII characters, and
+Python/Node SDKs: keys sorted by UTF-16 code units, no whitespace, UTF-8 without escaping non-ASCII characters, and
 numbers serialized the way ECMAScript's Number.prototype.toString does (1500.0 -> "1500").
 Integers beyond 2**53 are treated as IEEE-754 doubles (I-JSON), exactly as JavaScript does.
 """
@@ -63,7 +63,8 @@ def canonical_json(value: Any) -> str:
     if isinstance(value, float):
         return _es_number(value)
     if isinstance(value, dict):
-        items = sorted((str(k), v) for k, v in value.items())
+        # RFC 8785 / JavaScript order keys by UTF-16 code units, not by code points
+        items = sorted(((str(k), v) for k, v in value.items()), key=lambda item: item[0].encode("utf-16-be"))
         return "{" + ",".join(f"{_string(k)}:{canonical_json(v)}" for k, v in items) + "}"
     if isinstance(value, (list, tuple)):
         return "[" + ",".join(canonical_json(v) for v in value) + "]"

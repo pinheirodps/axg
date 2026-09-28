@@ -285,3 +285,46 @@ def test_python_sdk_ships_the_same_canonicalization():
     core = (root / "axg" / "canonical.py").read_bytes()
     sdk = (root / "sdks" / "axg-python-sdk" / "axg_python_sdk" / "canonical.py").read_bytes()
     assert core == sdk, "Keep axg/canonical.py and the SDK copy byte-identical"
+
+
+ALLOWLIST = "https://policies.example.com, https://cdn.example.org/axg/, https://:bad, "
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://policies.example.com/rules.json",
+        "https://POLICIES.example.com/finnorte/rules.json",
+        "https://policies.example.com:443/rules.json",
+        "https://cdn.example.org/axg/finnorte/rules.json",
+        "https://cdn.example.org/axg",
+    ],
+)
+def test_allowlist_accepts_same_origin_and_path(monkeypatch, url):
+    from axg.plugin_loader import _is_allowlisted
+
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", ALLOWLIST)
+    assert _is_allowlisted(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://policies.example.com.evil/rules.json",  # host suffix
+        "https://evil.com/policies.example.com/rules.json",
+        "https://policies.example.com@evil.com/rules.json",  # userinfo trick
+        "http://policies.example.com/rules.json",  # scheme
+        "https://policies.example.com:8443/rules.json",  # port
+        "https://cdn.example.org/axgevil/rules.json",  # path boundary
+        "https://cdn.example.org/other/rules.json",
+        "https://cdn.example.org/axg/../secret/rules.json",  # dot segments
+        "https://cdn.example.org/axg/%2e%2e/secret/rules.json",
+        "https://policies.example.com:99999/rules.json",  # invalid port
+        "not-a-url",
+    ],
+)
+def test_allowlist_rejects_lookalikes(monkeypatch, url):
+    from axg.plugin_loader import _is_allowlisted
+
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", ALLOWLIST)
+    assert not _is_allowlisted(url)
