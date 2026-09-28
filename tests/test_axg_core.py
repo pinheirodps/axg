@@ -1,3 +1,4 @@
+from axg.crypto import key_manager
 import json
 import socket
 from io import StringIO
@@ -147,6 +148,7 @@ async def test_plugin_loader_remote_disabled_by_default():
 @pytest.mark.asyncio
 async def test_plugin_loader_remote(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", "https://")
     hostname = "example.com"
     ip = "93.184.216.34"
     url = f"https://{hostname}/plugin/rules.json"
@@ -173,6 +175,7 @@ async def test_plugin_loader_remote(monkeypatch):
 @pytest.mark.asyncio
 async def test_plugin_loader_remote_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", "https://")
     hostname = "example.com"
     ip = "93.184.216.34"
     url = f"https://{hostname}/fail/rules.json"
@@ -188,6 +191,7 @@ async def test_plugin_loader_remote_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_plugin_loader_remote_invalid_json(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", "https://")
     hostname = "example.com"
     ip = "93.184.216.34"
     url = f"https://{hostname}/invalid/rules.json"
@@ -202,6 +206,7 @@ async def test_plugin_loader_remote_invalid_json(monkeypatch):
 @pytest.mark.asyncio
 async def test_plugin_loader_ssrf_protection(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", "https://,http://")
     loader = PluginLoader()
     
     # Test HTTP (unsafe)
@@ -251,6 +256,7 @@ async def test_plugin_loader_ssrf_protection(monkeypatch):
 @pytest.mark.asyncio
 async def test_plugin_loader_dns_failure(monkeypatch):
     monkeypatch.setenv("ENABLE_REMOTE_PLUGINS", "true")
+    monkeypatch.setenv("AXG_REMOTE_PLUGIN_ALLOWLIST", "https://")
     loader = PluginLoader()
     with patch("socket.getaddrinfo", side_effect=Exception("DNS Error")):
         with pytest.raises(PluginLoadError, match="unsafe or resolves to private IP"):
@@ -788,8 +794,8 @@ async def test_fail_safe_on_plugin_failure(tmp_path):
     assert response.audit_flags == ["plugin_load_failed"]
 
 
-def test_api_health_and_decision_endpoint():
-    client = TestClient(app)
+def test_api_health_and_decision_endpoint(api_client):
+    client = api_client
 
     assert client.get("/health").json() == {"status": "ok", "service": "axg"}
 
@@ -807,7 +813,7 @@ def test_api_get_certs() -> None:
     assert "public_key" in data
     assert "kid" in data
     assert "alg" in data
-    assert data["kid"] == "axg-key-001"
+    assert data["kid"] == key_manager.kid
     assert data["alg"] == "RS256"
     assert "BEGIN PUBLIC KEY" in data["public_key"]
 

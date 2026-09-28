@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
 import os
-import base64
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
@@ -13,7 +14,17 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from axg.canonical import canonical_hash
+
 logger = logging.getLogger(__name__)
+
+PASSPORT_VERSION = 2
+ISSUER = "axg-engine"
+
+
+class KeyConfigError(RuntimeError):
+    """Raised when signing keys are missing or invalid where they are mandatory."""
+
 
 def _int_to_base64url(val: int) -> str:
     """Converts an integer to base64url string as per RFC 7517/7518."""
@@ -23,13 +34,30 @@ def _int_to_base64url(val: int) -> str:
     der_bytes = val.to_bytes(byte_len, byteorder='big')
     return base64.urlsafe_b64encode(der_bytes).decode('ascii').rstrip('=')
 
+
+def _rsa_jwk(public_key_pem: str) -> Dict[str, str]:
+    """Public JWK for an RSA PEM key, with an RFC 7638 thumbprint as kid."""
+    public_key = serialization.load_pem_public_key(public_key_pem.encode("utf-8"), backend=default_backend())
+    if not isinstance(public_key, rsa.RSAPublicKey):
+        raise ValueError("Only RSA keys are supported for JWKS")
+    numbers = public_key.public_numbers()
+    e, n = _int_to_base64url(numbers.e), _int_to_base64url(numbers.n)
+    # RFC 7638: SHA-256 over the required members in lexicographic order, no whitespace
+    thumbprint_input = json.dumps({"e": e, "kty": "RSA", "n": n}, separators=(",", ":"), sort_keys=True)
+    kid = base64.urlsafe_b64encode(hashlib.sha256(thumbprint_input.encode("ascii")).digest()).decode("ascii").rstrip("=")
+    return {"kty": "RSA", "alg": "RS256", "use": "sig", "kid": kid, "n": n, "e": e}
+
+
+def _is_production() -> bool:
+    return os.environ.get("AXG_ENV", "development").strip().lower() == "production"
+
+
 class KeyManager:
     """
     Manages RSA keys for AXG Passport signing and verification.
     Follows SOLID by isolating key lifecycle and format conversion.
     """
-    KID = "axg-key-001"
-    
+
     def __init__(self):
         self.reload()
 
@@ -40,7 +68,7 @@ class KeyManager:
         self._load_keys()
 
     def _load_keys(self):
-        """Loads keys from environment or generates ephemeral ones (Fail-Safe)."""
+        """Loads keys from the environment; ephemeral keys only outside production (fail-closed)."""
         env_priv = os.environ.get("AXG_PRIVATE_KEY")
         env_pub = os.environ.get("AXG_PUBLIC_KEY")
 
@@ -50,6 +78,8 @@ class KeyManager:
                 self._public_key_str = env_pub.replace("\\n", "\n")
             else:
                 self._public_key_str = self._derive_public_key(self._private_key_str)
+        elif _is_production():
+            raise KeyConfigError("AXG_PRIVATE_KEY is required when AXG_ENV=production")
         else:
             self._generate_ephemeral_keys()
 
@@ -73,13 +103,13 @@ class KeyManager:
             key_size=2048,
             backend=default_backend()
         )
-        
+
         self._private_key_str = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.NoEncryption()
         ).decode("utf-8")
-        
+
         self._public_key_str = private_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
@@ -93,30 +123,27 @@ class KeyManager:
     def public_key(self) -> str:
         return self._public_key_str
 
-    def get_jwks(self) -> Dict[str, Any]:
-        """Returns the public key in JSON Web Key Set format."""
-        try:
-            public_key = serialization.load_pem_public_key(
-                self.public_key.encode("utf-8"),
-                backend=default_backend()
-            )
-            if not isinstance(public_key, rsa.RSAPublicKey):
-                raise ValueError("Only RSA keys are supported for JWKS")
+    @property
+    def kid(self) -> str:
+        """RFC 7638 thumbprint of the current signing key (changes when the key rotates)."""
+        return _rsa_jwk(self.public_key)["kid"]
 
-            numbers = public_key.public_numbers()
-            
-            return {
-                "keys": [
-                    {
-                        "kty": "RSA",
-                        "alg": "RS256",
-                        "use": "sig",
-                        "kid": self.KID,
-                        "n": _int_to_base64url(numbers.n),
-                        "e": _int_to_base64url(numbers.e),
-                    }
-                ]
-            }
+    def _previous_public_keys(self) -> list[str]:
+        """Retired public keys kept in the JWKS so passports signed before a rotation still verify."""
+        raw = os.environ.get("AXG_PREVIOUS_PUBLIC_KEYS", "").strip()
+        if not raw:
+            return []
+        keys = json.loads(raw)
+        if not isinstance(keys, list):
+            raise ValueError("AXG_PREVIOUS_PUBLIC_KEYS must be a JSON list of PEM strings")
+        return [k.replace("\\n", "\n") for k in keys]
+
+    def get_jwks(self) -> Dict[str, Any]:
+        """Returns the current and retired public keys in JSON Web Key Set format."""
+        try:
+            keys = [_rsa_jwk(self.public_key)]
+            keys += [_rsa_jwk(pem) for pem in self._previous_public_keys()]
+            return {"keys": keys}
         except Exception as e:
             logger.error(f"Failed to generate JWKS: {e}")
             if isinstance(e, ValueError):
@@ -136,40 +163,50 @@ def get_jwks() -> Dict[str, Any]:
     return key_manager.get_jwks()
 
 def hash_payload(payload: dict[str, Any]) -> str:
-    """Creates a deterministic SHA-256 hash of the payload (DRY)."""
-    serialized = json.dumps(payload, sort_keys=True, separators=(',', ':'))
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    """Deterministic SHA-256 of the canonical (RFC 8785-style) JSON payload (DRY)."""
+    return canonical_hash(payload)
 
 def sign_decision(
+    *,
     execution_id: str,
     app_id: str,
+    tenant_id: str,
     decision: str,
     action_type: str,
     actionable_payload: dict[str, Any],
-    expires_in_minutes: int = 5
-) -> str:
-    """Generates a signed JWT Decision Token following RS256 standard."""
+    client_id: str,
+    policy: str,
+    expires_in_minutes: int = 5,
+) -> tuple[str, str]:
+    """Issue a Passport v2 (RS256 JWT). Returns (token, jti)."""
     now = datetime.now(timezone.utc)
-    
+    jti = str(uuid.uuid4())
+
     claims = {
-        "iss": "axg-engine",
+        "iss": ISSUER,
         "sub": execution_id,
         "aud": app_id,
+        "azp": client_id,
         "iat": int(now.timestamp()),
+        "nbf": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=expires_in_minutes)).timestamp()),
+        "jti": jti,
+        "ver": PASSPORT_VERSION,
+        "tenant_id": tenant_id,
         "decision": decision,
         "action_type": action_type,
+        "policy": policy,
         "payload_hash": hash_payload(actionable_payload),
     }
-    
+
     try:
         token = jwt.encode(
-            claims, 
-            key_manager.private_key, 
-            algorithm="RS256", 
-            headers={"kid": key_manager.KID}
+            claims,
+            key_manager.private_key,
+            algorithm="RS256",
+            headers={"kid": key_manager.kid}
         )
-        return token
+        return token, jti
     except Exception as e:
         logger.error(f"Failed to sign decision token: {e}")
         raise ValueError("Could not generate cryptographic decision token") from e

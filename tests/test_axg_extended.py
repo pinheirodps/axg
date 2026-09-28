@@ -144,7 +144,10 @@ def test_key_manager_jwks_error():
 def test_sign_decision_error():
     with patch("axg.crypto.jwt.encode", side_effect=Exception("sign error")):
         with pytest.raises(ValueError, match="Could not generate cryptographic decision token"):
-            sign_decision("exec1", "app1", "ALLOW", "action", {})
+            sign_decision(
+                execution_id="exec1", app_id="app1", tenant_id="t1", decision="ALLOW",
+                action_type="action", actionable_payload={}, client_id="c1", policy="p@1",
+            )
 
 def test_hash_payload_determinism():
     p1 = {"a": 1, "b": 2}

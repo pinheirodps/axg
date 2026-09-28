@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import ipaddress
+import re
 from urllib.parse import urlparse
 from pathlib import Path
 
@@ -16,8 +17,18 @@ from axg.models import Plugin
 
 logger = logging.getLogger(__name__)
 
+# Local plugin ids are folder names: no separators, no traversal
+_PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+
+
 class PluginLoadError(Exception):
     pass
+
+
+def _is_allowlisted(plugin_url: str) -> bool:
+    """Remote policies may only come from operator-approved URL prefixes."""
+    prefixes = [p.strip() for p in os.environ.get("AXG_REMOTE_PLUGIN_ALLOWLIST", "").split(",") if p.strip()]
+    return any(plugin_url.startswith(prefix) for prefix in prefixes)
 
 
 class PluginLoader:
@@ -40,6 +51,8 @@ class PluginLoader:
                     "Remote plugin loading is disabled for security. "
                     "Set ENABLE_REMOTE_PLUGINS=true to enable."
                 )
+            if not _is_allowlisted(plugin_id):
+                raise PluginLoadError("Remote plugin URL is not in AXG_REMOTE_PLUGIN_ALLOWLIST")
             plugin = await self._load_remote(plugin_id)
         else:
             plugin = await self._load_local(plugin_id)
@@ -53,6 +66,8 @@ class PluginLoader:
         self._cache.clear()
 
     async def _load_local(self, plugin_id: str) -> Plugin:
+        if not _PLUGIN_ID.fullmatch(plugin_id):
+            raise PluginLoadError(f"Invalid plugin id: {plugin_id!r}")
         plugin_path = self.plugins_dir / plugin_id / "rules.json"
         if not plugin_path.exists():
             raise PluginLoadError(f"Local plugin '{plugin_id}' not found at {plugin_path}")

@@ -33,27 +33,40 @@ def test_key_generation():
     assert "BEGIN PUBLIC KEY" in pub
     assert "BEGIN PRIVATE KEY" in priv
 
+SIGN_ARGS = dict(
+    execution_id="123",
+    app_id="test_app",
+    tenant_id="tenant_1",
+    decision="ALLOW",
+    action_type="add_expense",
+    actionable_payload={"amount": 10},
+    client_id="client_1",
+    policy="finnorte@0.1.0",
+)
+
+
 def test_hash_payload():
     payload1 = {"amount": 100, "merchant": "Uber"}
     payload2 = {"merchant": "Uber", "amount": 100}
     assert hash_payload(payload1) == hash_payload(payload2)
 
 def test_sign_decision():
-    token = sign_decision(
-        execution_id="123",
-        app_id="test_app",
-        decision="ALLOW",
-        action_type="add_expense",
-        actionable_payload={"amount": 10}
-    )
+    token, jti = sign_decision(**SIGN_ARGS)
     assert token
-    
+
     # Verify token
     pub_key = get_public_key()
     decoded = jwt.decode(token, pub_key, algorithms=["RS256"], audience="test_app")
     assert decoded["sub"] == "123"
     assert decoded["decision"] == "ALLOW"
     assert decoded["payload_hash"] == hash_payload({"amount": 10})
+    assert decoded["jti"] == jti
+    assert decoded["ver"] == 2
+    assert decoded["tenant_id"] == "tenant_1"
+    assert decoded["azp"] == "client_1"
+    assert decoded["policy"] == "finnorte@0.1.0"
+    assert decoded["nbf"] == decoded["iat"]
+    assert jwt.get_unverified_header(token)["kid"] == key_manager.kid
 
 def test_crypto_env_vars(monkeypatch):
     monkeypatch.setenv("AXG_PRIVATE_KEY", "env_private_key\\n")
@@ -90,7 +103,7 @@ def test_sign_decision_failure(monkeypatch):
     monkeypatch.setattr(jwt, "encode", mock_encode)
     
     with pytest.raises(ValueError, match="Could not generate cryptographic decision token"):
-        sign_decision("1", "app", "ALLOW", "act", {})
+        sign_decision(**SIGN_ARGS)
 
 def test_get_jwks():
     jwks = get_jwks()
@@ -99,7 +112,7 @@ def test_get_jwks():
     key = jwks["keys"][0]
     assert key["kty"] == "RSA"
     assert key["alg"] == "RS256"
-    assert key["kid"] == "axg-key-001"
+    assert key["kid"] == key_manager.kid
     assert "n" in key
     assert "e" in key
 
