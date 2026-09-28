@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import threading
@@ -63,11 +64,13 @@ def verify_passport(
     jwks_url: Optional[str] = None,
     _signing_key: Any = None,
     replay_cache: Optional[ReplayCache] = None,
+    jwks_client: Optional[PyJWKClient] = None,
 ) -> Dict[str, Any]:
     """
     Top-level utility for AXG Passport verification.
 
     Pass ``replay_cache`` to reject a Passport presented more than once (requires Passport v2).
+    Pass a long-lived ``jwks_client`` to reuse cached keys instead of fetching the JWKS per call.
     """
     try:
         if public_key:
@@ -75,9 +78,10 @@ def verify_passport(
         elif _signing_key:
             signing_key = _signing_key
         else:
-            if not jwks_url:
-                raise ValueError("Either public_key or jwks_url must be provided.")
-            jwks_client = PyJWKClient(jwks_url)
+            if jwks_client is None:
+                if not jwks_url:
+                    raise ValueError("Either public_key or jwks_url must be provided.")
+                jwks_client = PyJWKClient(jwks_url)
             signing_key = jwks_client.get_signing_key_from_jwt(token).key
 
         claims = jwt.decode(
@@ -140,6 +144,8 @@ class AxgClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
         self.jwks_url = f"{self.base_url}/.well-known/jwks.json"
+        # One client per AxgClient: PyJWKClient caches keys and refetches only on an unknown kid
+        self._jwks_client = PyJWKClient(self.jwks_url)
 
     async def verify_passport(
         self,
@@ -153,16 +159,18 @@ class AxgClient:
         replay_cache: Optional[ReplayCache] = None,
     ) -> Dict[str, Any]:
         """
-        Verifies an AXG Decision Token (Passport) using the client's JWKS.
+        Verifies an AXG Decision Token (Passport) using the client's cached JWKS.
+        Runs in a worker thread: fetching keys is blocking network I/O.
         """
-        return verify_passport(
+        return await asyncio.to_thread(
+            verify_passport,
             token,
             payload,
             app_id,
             tenant_id=tenant_id,
             allowed_action_types=allowed_action_types,
-            jwks_url=self.jwks_url,
             public_key=public_key,
             _signing_key=_signing_key,
             replay_cache=replay_cache,
+            jwks_client=self._jwks_client,
         )

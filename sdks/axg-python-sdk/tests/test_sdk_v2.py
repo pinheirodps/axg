@@ -166,3 +166,24 @@ def test_action_type_allowlist(keys):
     with pytest.raises(AxgVerificationError) as exc:
         verify_passport(token, PAYLOAD, "finnorte", allowed_action_types=["create_income"], public_key=public)
     assert exc.value.code == "ACTION_TYPE_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_client_reuses_one_jwks_client(keys, monkeypatch):
+    from unittest.mock import MagicMock
+
+    import axg_python_sdk
+
+    pem, public = keys
+    jwks_client = MagicMock()
+    jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key=public)
+    factory = MagicMock(return_value=jwks_client)
+    monkeypatch.setattr(axg_python_sdk, "PyJWKClient", factory)
+
+    client = axg_python_sdk.AxgClient("https://axg.example")
+    for jti in ("k1", "k2", "k3"):
+        token = passport(pem, ver=2, jti=jti, payload_hash=hash_payload(PAYLOAD))
+        await client.verify_passport(token, PAYLOAD, "finnorte")
+
+    factory.assert_called_once_with("https://axg.example/.well-known/jwks.json")
+    assert jwks_client.get_signing_key_from_jwt.call_count == 3

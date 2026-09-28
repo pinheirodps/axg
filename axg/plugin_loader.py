@@ -91,7 +91,8 @@ class PluginLoader:
             raise PluginLoadError(f"Remote plugins MUST use HTTPS: {plugin_url}")
 
         # Resolve and validate IP (DNS Pinning start)
-        safe_ip = self._get_safe_ip(hostname)
+        # getaddrinfo blocks: keep DNS resolution off the event loop
+        safe_ip = await anyio.to_thread.run_sync(self._get_safe_ip, hostname)
         if not safe_ip:
             raise PluginLoadError(f"Remote plugin host '{hostname}' is unsafe or resolves to private IP.")
 
