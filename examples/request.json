@@ -4,7 +4,7 @@
   "app_id": "finnorte",
   "plugin_id": "finnorte",
   "agent": {
-    "id": "muai_whatsapp",
+    "id": "expense_bot",
     "type": "service",
     "permissions": ["expense:create"]
   },

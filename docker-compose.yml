@@ -1,3 +1,5 @@
+# Local development. Secrets come from the environment or a .env file, never from this file.
+#   AXG_CLIENTS='[{"client_id":"dev","key_sha256":"<sha256 of your key>","app_ids":["*"],"permissions":["*"]}]' docker compose up
 services:
   axg:
     build: .
@@ -5,19 +7,21 @@ services:
     ports:
       - "8090:8090"
     environment:
-      # Secrets come from the environment / .env, never from this file
-      - AXG_ADMIN_TOKEN=${AXG_ADMIN_TOKEN:-}
-      - AXG_PRIVATE_KEY=${AXG_PRIVATE_KEY:-}
       - AXG_CLIENTS=${AXG_CLIENTS:-}
       - AXG_AUTH_MODE=${AXG_AUTH_MODE:-required}
+      - AXG_PRIVATE_KEY=${AXG_PRIVATE_KEY:-}
+      - AXG_ADMIN_TOKEN=${AXG_ADMIN_TOKEN:-}
+      - AXG_AUDIT_FILE=/var/lib/axg/audit.jsonl
+      # Set to export traces and metrics, e.g. http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
-      - ./plugins:/app/plugins
+      - ./plugins:/app/plugins:ro
+      - axg-audit:/var/lib/axg
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Sample Consumer App (Simulating a backend using AXG)
-  # This could be a small Node.js app using our new SDK
-  # For now, we'll use a simple mock or the user can run their app
+volumes:
+  axg-audit:

@@ -1,354 +1,171 @@
-# AXG - Agent Execution Guard
+# AXG — Agent Execution Guard
 
-![AXG Hero](images/hero.png)
+![AXG](images/hero.png)
 
-Deterministic execution control for AI agent actions in real systems.
+[![CI](https://github.com/pinheirodps/axg/actions/workflows/ci.yml/badge.svg)](https://github.com/pinheirodps/axg/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+
+**Deterministic, auditable control over what AI agents are allowed to do.**
 
 > AI suggests. AXG decides.
 
-AXG sits between probabilistic AI interpretation and deterministic system writes. It evaluates risk, uncertainty, and policy constraints before any action is allowed to execute.
+An agent proposes an action (write a record, run a shell command, call a tool). Before anything executes, AXG evaluates it against a declarative policy and answers `ALLOW`, `SUGGEST`, `CONFIRM` or `BLOCK`. An `ALLOW` comes with a signed **Passport** that binds the decision to the exact payload, so the system that executes the action can verify it was authorized and was not changed on the way.
 
-## Status: Beta (v0.2.1)
+- **Deterministic:** the same request under the same policy always gets the same decision. No model sits in the decision path.
+- **Framework-agnostic:** any agent, orchestrator, MCP client or backend calls one HTTP API, or embeds the engine in process.
+- **Verifiable:** RS256 Passports with payload hashing, JWKS and single-use `jti`; SDKs for Python and Node.
+- **Auditable:** hash-chained audit log and OpenTelemetry traces for every decision.
 
-AXG is in production as the decision layer of the MUAI ecosystem. v0.2 adds authenticated callers and Passport v2. The API may still change before 1.0. Read [Security Model](#security-model) before exposing AXG outside a private network.
+## Contents
 
-## Why AXG Exists
+- [How it works](#how-it-works)
+- [Quickstart](#quickstart)
+- [Integrations](#integrations)
+- [Decisions](#decisions)
+- [Security](#security)
+- [Documentation](#documentation)
+- [Status and roadmap](#status-and-roadmap)
+- [Contributing](#contributing)
 
-AI agents are probabilistic by nature. Production systems are not.
+## How it works
 
-AXG is designed to prevent blind automation by enforcing deterministic decisions:
-
-- **ALLOW**: safe to execute automatically
-- **SUGGEST**: provide recommendation but avoid silent execution
-- **CONFIRM**: require explicit human confirmation
-- **BLOCK**: deny execution based on policy/permission
-
-## How AXG Fits In
-
-![AXG Architecture](images/architecture.png)
-
-In the broader ecosystem, MUAI is the gateway for AI capabilities and model fallback. AXG remains the deterministic gate before writes, external actions, or operational truth updates.
-
-**MUAI LLM Gateway Synergy**: AXG is fully integrated with MUAI's LLM Gateway, ensuring that model-agnostic capabilities are governed by centralized security and risk policies.
-
-Execution flow:
-
-```text
-App/Bot/Tool -> MUAI (intent + capabilities) -> AXG (execution guard) -> Core system write path
+```mermaid
+flowchart LR
+    P["Agent, orchestrator or tool<br/>(any framework, any model)"] -->|DecisionRequest| AXG{{AXG}}
+    AXG -->|ALLOW + Passport| X["Executor verifies the Passport,<br/>then acts"]
+    AXG -->|SUGGEST / CONFIRM| H[Human in the loop]
+    AXG -->|BLOCK| D[Denied]
+    AXG -.->|spans + metrics| O[(OpenTelemetry)]
+    AXG -.->|hash-chained records| A[(Audit log)]
 ```
 
-## What AXG Is (and Is Not)
+1. The caller authenticates with an API key and sends a `DecisionRequest`: who acts (agent and permissions), what it wants to do (`action_type`, `payload`) and how sure the proposer is (`llm.confidence`).
+2. AXG loads the policy plugin, evaluates its rules, enforces agent permissions and computes risk, confidence and uncertainty scores. The strictest outcome wins.
+3. `ALLOW` responses carry a Passport. The executor verifies it with an SDK before acting. Everything else carries a human-readable reason and machine-readable audit flags.
 
-AXG **is**:
-- a deterministic execution control plane
-- a policy/risk decision engine
-- a cryptographic trust layer for autonomous actions (via AXG Passport)
-- an auditable guardrail layer for production workflows
+AXG never calls a model and never executes the action itself. It is not an LLM wrapper, a prompt framework or an agent framework.
 
-AXG is **not**:
-- an LLM wrapper
-- a prompt orchestration framework
-- an autonomous agent framework
+## Quickstart
 
-## Core Capabilities
+Run the server with an API key for your app:
 
-- **Context Validation**: Validates `app_id`, `plugin_id`, source, and action.
-- **Agent Identity**: Supports agent identity and permission-based authorization.
-- **Declarative Rules**: Applies rules (`plugins/<plugin_id>/rules.json`) without dynamic code execution.
-- **Deterministic Scoring**: Computes `llm_confidence`, `final_confidence`, `risk_score`, and `uncertainty_score`.
-- **Authenticated Callers**: API keys (stored as SHA-256) bind each caller to the apps it may request decisions for and to the permissions it may grant its agents.
-- **AXG Passport v2**: Issues short-lived RS256 signed `passport` tokens for `ALLOW` decisions only.
-- **Payload Integrity**: The whole actionable payload is bound to the Passport by a canonical (RFC 8785-style) SHA-256 hash, identical in Python and Node.
-- **Public Verification**: Exposes public keys through `/.well-known/jwks.json` (key rotation supported) and `/v1/certs`.
-- **Audit Sinks**: Structured logging, file (`JSONL`), and webhook audit sinks.
-- **OpenTelemetry**: One span per decision (joined to the caller's W3C trace), rule events and decision metrics, exported over OTLP. See [Observability](#observability-opentelemetry).
-- **CLI**: Tool for plugin validation and local decision simulation.
+```bash
+export AXG_KEY=$(openssl rand -hex 32)
+export AXG_CLIENTS="[{\"client_id\":\"quickstart\",\"key_sha256\":\"$(python3 -c "import hashlib,os;print(hashlib.sha256(os.environ['AXG_KEY'].encode()).hexdigest())")\",\"app_ids\":[\"*\"],\"permissions\":[\"*\"]}]"
 
-## AXG Passport
+docker run --rm -p 8090:8090 -e AXG_CLIENTS="$AXG_CLIENTS" ghcr.io/pinheirodps/axg:latest
+```
 
-AXG Passport makes AXG a cryptographic trust layer. When an **authenticated** caller receives an `ALLOW` decision, the response includes a short-lived JWT `passport` signed with RS256. `SUGGEST`, `CONFIRM`, `BLOCK` and shadow-mode evaluations never carry one.
+Ask for decisions (from a clone of this repository, which provides the example requests):
 
-Consumer systems (e.g., FinNorte, Social Intent) verify this token before trusting an AI-proposed action. The token binds the authorized action to a deterministic hash of the payload, preventing tampering or unauthorized modification.
+```bash
+# A coding agent wants to read a file: ALLOW, with a Passport
+curl -s localhost:8090/v1/decisions -H "Authorization: Bearer $AXG_KEY" \
+  -H "Content-Type: application/json" -d @examples/allow.json
 
-Passport v2 claims:
+# The same agent wants to run `rm -rf /`: BLOCK
+curl -s localhost:8090/v1/decisions -H "Authorization: Bearer $AXG_KEY" \
+  -H "Content-Type: application/json" -d @examples/block.json
+```
 
-| Claim | Meaning |
+```json
+{
+  "decision": "BLOCK",
+  "plugin_version": "claude-code@0.1.0",
+  "reason": "This command can irreversibly destroy files or devices.",
+  "rules_triggered": [{"id": "destructive_shell_command", "decision": "BLOCK", "reason": "..."}],
+  "scores": {"risk_score": 1.0, "risk_level": "high", "final_confidence": 0.49},
+  "passport": null
+}
+```
+
+Or embed the engine in a Python process:
+
+```python
+import asyncio
+from pathlib import Path
+
+from axg import DecisionEngine, DecisionRequest
+from axg.plugin_loader import PluginLoader
+
+engine = DecisionEngine(loader=PluginLoader(Path("plugins")))
+
+async def main():
+    decision = await engine.decide(DecisionRequest(
+        execution_id="exec-1", tenant_id="acme", app_id="claude-code", plugin_id="claude-code",
+        source="coding_agent", action_type="Bash", payload={"command": "git push --force origin main"},
+        llm={"confidence": 0.92},
+    ))
+    print(decision.decision.value, "-", decision.reason)
+    # CONFIRM - This Git operation can discard work or rewrite shared history.
+
+asyncio.run(main())
+```
+
+Install with `pip install "axg @ git+https://github.com/pinheirodps/axg"` (add `[otel]` for OpenTelemetry export).
+
+## Integrations
+
+| Where your agents run | Integration |
 |---|---|
-| `iss`, `aud`, `sub` | `axg-engine`, the `app_id`, the `execution_id` |
-| `iat`, `nbf`, `exp` | Issued at, valid from, expires (5 minutes) |
-| `jti` | Unique id: verifiers can enforce single use (`replay_cache` / `replayCache` in the SDKs) |
-| `ver` | `2` |
-| `tenant_id` | Tenant the decision was made for |
-| `azp` | Client that requested the decision |
-| `decision`, `action_type` | Always `ALLOW`, plus the authorized action |
-| `policy` | `plugin@version` that produced the decision |
-| `payload_hash` | Canonical SHA-256 of the `actionable_payload` |
+| Any language or framework | HTTP API, plus the [Python](sdks/axg-python-sdk) and [Node](sdks/axg-node-sdk) SDKs to verify Passports |
+| MCP servers and tools | `verify_mcp_tool_call` / `verifyMcpToolCall`: a tool checks that AXG authorized exactly the call it received |
+| AWS Bedrock AgentCore Gateway | [REQUEST interceptor](integrations/agentcore) (Lambda) that decides before Cedar |
+| Microsoft Agent Governance Toolkit | [`IExternalPolicyBackend`](integrations/agt-dotnet) for .NET |
+| Claude Code | [`PreToolUse` hook](integrations/claude_code) with a policy for shell and file tools |
+| Observability | [OpenTelemetry](docs/observability.md) traces and metrics over OTLP |
 
-The SDKs (`sdks/axg-python-sdk`, `sdks/axg-node-sdk`) check signature, issuer, audience, validity window, decision, tenant, action type and payload hash. They also still verify v1 tokens.
+Example policies live in [`plugins/`](plugins): `claude-code` (coding agents), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
 
-### Passport Flow
+## Decisions
 
-```text
-Agent / Bot / App
-  -> MUAI interprets intent
-  -> AXG evaluates policy and signs ALLOW decisions
-  -> Consumer backend verifies Passport token
-  -> System writes only if verification passes
-```
-
-## Decision Flow (Deterministic)
-
-1. Load plugin by `plugin_id`.
-2. Evaluate declarative rules against request data.
-3. Compute confidence/risk/uncertainty scores.
-4. Apply fail-safe uncertainty gate for risky financial writes.
-5. Enforce action permissions.
-6. Apply strongest rule decision by precedence.
-7. Fallback to threshold-based decision when no rule applies.
-8. Sign the actionable payload for `ALLOW` decisions (RS256).
-
-Decision precedence:
-`BLOCK > CONFIRM > SUGGEST > ALLOW`
-
-## API
-
-- `GET /health`: Health check.
-- `POST /v1/decisions`: Main decision engine endpoint (`Authorization: Bearer <api key>`).
-- `GET /.well-known/jwks.json`: Current and retired public keys for Passport verification.
-- `GET /v1/certs`: Current public key in PEM (legacy).
-- `POST /v1/plugins/reload`: Administrative plugin reload (requires `AXG_ADMIN_TOKEN`).
-
-## Observability (OpenTelemetry)
-
-Every decision is traced and measured with [OpenTelemetry](https://opentelemetry.io/), so AXG decisions show up next to your agent and LLM spans in any OTLP backend (Jaeger, Grafana Tempo, Honeycomb, Datadog, Azure Monitor, AWS X-Ray via ADOT...).
-
-- **Server:** set `OTEL_EXPORTER_OTLP_ENDPOINT` (for example `http://otel-collector:4318`). The image ships `axg[otel]` and exports traces and metrics over OTLP/HTTP. The standard `OTEL_*` variables apply (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SDK_DISABLED`...). If `opentelemetry-instrument` already installed a provider, AXG uses it.
-- **Library:** AXG depends only on `opentelemetry-api`. Without an SDK in the host it is a no-op; with one, `DecisionEngine.decide` spans join the host's current trace.
-- **Trace propagation:** callers send W3C `traceparent`, and the `axg.decide` span becomes a child of the caller's span. Each `ExecutionRecord` in the audit log carries the `trace_id`, so a record leads straight to its trace.
-- **Privacy:** telemetry carries decision metadata only. Payloads, actionable payloads, reasons, intents and Passports never leave AXG through spans or metrics.
-
-| Signal | Name | Content |
+| Decision | Meaning | Passport |
 |---|---|---|
-| Span | `axg.decide` | `axg.decision`, `axg.policy` (plugin@version), `axg.action.type`, `axg.plugin.id`, `axg.tenant.id`, `axg.app.id`, `axg.client.id`, `axg.execution.id`, `axg.source`, `axg.shadow_mode`, `axg.risk.score`, `axg.risk.level`, `axg.confidence.final`, `axg.uncertainty.score`, `axg.proposal.confidence`, `axg.proposal.model`, `axg.rules.triggered`, `axg.audit.flags`, `axg.passport.id` (jti), `gen_ai.agent.id` |
-| Span event | `axg.rule.triggered` | `axg.rule.id`, `axg.rule.decision`, once per matched rule |
-| Span status | `ERROR` | Only when the policy could not be evaluated (`plugin_load_failed`, `passport_signing_failed`) or an exception escaped. `BLOCK` and `CONFIRM` are correct outcomes, not errors |
-| Counter | `axg.decisions` | By `axg.decision`, `axg.plugin.id`, `axg.action.type`, `axg.client.id`, `axg.shadow_mode` |
-| Counter | `axg.rules.triggered` | By `axg.rule.id`, `axg.rule.decision`, `axg.plugin.id` |
-| Histogram | `axg.decision.duration` (s) | Same attributes as `axg.decisions`, plus `error.type` on failures |
+| `ALLOW` | Safe to execute automatically | Yes, for authenticated callers outside shadow mode |
+| `SUGGEST` | Show as a recommendation; do not execute silently | No |
+| `CONFIRM` | A human must confirm before execution | No |
+| `BLOCK` | Denied by policy or missing permission | No |
 
-Metric attributes are low-cardinality on purpose: tenant, execution and agent ids are on spans only.
+Precedence is `BLOCK > CONFIRM > SUGGEST > ALLOW`: the strictest applicable outcome wins. Errors never fail open: a policy that cannot be loaded, or a Passport that cannot be signed, results in `CONFIRM`. See [how AXG decides](docs/concepts.md).
 
-## Security Model
+## Security
 
-A Passport is only as trustworthy as the caller that asked for it, so:
+- **Authenticated callers.** API keys, stored as SHA-256, bind each caller to the apps it may request decisions for and cap the permissions it may grant its agents. Anonymous callers are rejected (`401`) or, in migration mode, can never receive `ALLOW`.
+- **Passport v2.** A short-lived RS256 JWT with `jti`, `nbf`, tenant, caller (`azp`), policy version and a canonical hash of the whole actionable payload. Keys are published as JWKS, with rotation.
+- **Hardening.** Request size limits, per-caller rate limits, no dynamic code in policies, allow-listed remote policies, a hash-chained audit log, pinned dependencies and actions, SBOM and provenance on images.
 
-- Every network caller authenticates with an API key. `AXG_AUTH_MODE=required` (default) rejects anonymous calls with `401`. `optional` exists for migrations only: anonymous calls are evaluated but can never receive `ALLOW` or a Passport.
-- A caller may only request decisions for its own `app_ids` (the Passport audience), otherwise `403`.
-- Agent permissions in the request are capped by the permissions granted to the caller.
-- Without `AXG_PRIVATE_KEY`, AXG refuses to start when `AXG_ENV=production`; elsewhere it uses ephemeral development keys.
-- Remote plugins are off by default. When enabled, they load only from `AXG_REMOTE_PLUGIN_ALLOWLIST` entries. Each entry is parsed and must match exactly on scheme, host and port. A path in the entry scopes it on a segment boundary, and dot segments are rejected.
+Read the [security model](docs/security-model.md) before exposing AXG outside a private network. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
-- Request bodies are capped (`AXG_MAX_BODY_BYTES`) and decisions are rate-limited per caller (`AXG_RATE_LIMIT_PER_MINUTE`).
-- The JSONL audit log is hash-chained: `axg verify-audit --file <path>` detects edited, deleted or reordered records.
+## Documentation
 
-Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). Do not use public issues.
-
-### Configuration
-
-| Variable | Purpose |
+| Topic | |
 |---|---|
-| `AXG_CLIENTS` | JSON list of callers: `[{"client_id": "muai", "key_sha256": "<sha256 of the key>", "app_ids": ["finnorte"], "permissions": ["*"]}]` |
-| `AXG_AUTH_MODE` | `required` (default) or `optional` (migration only) |
-| `AXG_ENV` | `production` makes a missing signing key fatal |
-| `AXG_PRIVATE_KEY` / `AXG_PUBLIC_KEY` | RS256 signing key (PEM; `\n` escapes accepted) |
-| `AXG_PREVIOUS_PUBLIC_KEYS` | JSON list of retired public keys still published in the JWKS during rotation |
-| `AXG_ADMIN_TOKEN` | Enables `POST /v1/plugins/reload` |
-| `ENABLE_REMOTE_PLUGINS`, `AXG_REMOTE_PLUGIN_ALLOWLIST` | Opt-in remote policies; comma-separated allowed origins, optionally with a path (`https://policies.example.com/axg/`) |
-| `AXG_AUDIT_FILE`, `AXG_AUDIT_WEBHOOK`, `AXG_AUDIT_WEBHOOK_TOKEN` | Audit sinks (file is hash-chained; webhook retries 3 times) |
-| `AXG_MAX_BODY_BYTES` | Maximum request body (default 262144) |
-| `AXG_RATE_LIMIT_PER_MINUTE` | Decisions per caller per minute, per process (default 600, `0` disables) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Enables OpenTelemetry export over OTLP/HTTP (see [Observability](#observability-opentelemetry)) |
+| [Concepts](docs/concepts.md) | Decision flow, scores, uncertainty gate, fail-safe principles |
+| [Writing policies](docs/policies.md) | Plugin format, rules and operators, permissions, validation |
+| [Passport](docs/passport.md) | Claims, verification in Python and Node, replay protection, key rotation, MCP |
+| [API and contracts](docs/api.md) | Endpoints, request and response fields, errors, JSON Schemas |
+| [Configuration and deployment](docs/configuration.md) | Environment variables, Docker, production checklist |
+| [Security model](docs/security-model.md) | Trust boundaries and threat model |
+| [Observability](docs/observability.md) | OpenTelemetry spans, events and metrics |
+| [Changelog](CHANGELOG.md) | Release notes |
 
-Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <key>`.
+## Status and roadmap
 
-### Example Request
+AXG is **beta (v0.2)** and runs in production. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
 
-```json
-{
-  "execution_id": "exec_001",
-  "tenant_id": "tenant_001",
-  "app_id": "finnorte",
-  "plugin_id": "finnorte",
-  "agent": {
-    "id": "muai_whatsapp",
-    "type": "service",
-    "permissions": ["expense:create"]
-  },
-  "source": "whatsapp",
-  "action_type": "create_expense",
-  "payload": {
-    "merchant": "Uber",
-    "amount": 1500,
-    "currency": "EUR",
-    "proposed_action": "create_expense",
-    "proposed_category": "Transport"
-  },
-  "context": {},
-  "llm": {
-    "model": "llama-3.3-70b",
-    "confidence": 0.78,
-    "raw_output": {}
-  },
-  "intent": {
-    "original": "create_expense",
-    "resolved": "create_expense",
-    "fallback_used": false
-  },
-  "metadata": {
-    "tenant_id": "tenant_001",
-    "flow": "bot_expense_validation"
-  }
-}
-```
+Next: an approvals API to turn `CONFIRM` into a signed human decision, signed context from trusted providers, an MCP gateway mode, and packages on PyPI and npm.
 
-### Example Response
+## Contributing
 
-```json
-{
-  "schema_version": "axg.decision_response.v1",
-  "execution_id": "exec_001",
-  "plugin_version": "finnorte@0.1.0",
-  "decision": "CONFIRM",
-  "passport": null,
-  "passport_id": null,
-  "scores": {
-    "llm_confidence": 0.78,
-    "final_confidence": 0.48,
-    "risk_score": 0.9,
-    "risk_level": "high",
-    "uncertainty_score": 0.0
-  },
-  "actionable_payload": {
-    "proposed_action": "create_expense",
-    "merchant": "Uber",
-    "amount": 1500,
-    "currency": "EUR",
-    "suggested_category": "Transport"
-  },
-  "reason": "This transaction has a high financial value and requires user confirmation before saving. This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving.",
-  "audit_flags": [
-    "high_value_transaction",
-    "requires_user_confirmation",
-    "merchant_amount_anomaly"
-  ],
-  "rules_triggered": [
-    {
-      "id": "high_value_transaction",
-      "decision": "CONFIRM",
-      "reason": "This transaction has a high financial value and requires user confirmation before saving."
-    },
-    {
-      "id": "merchant_amount_anomaly",
-      "decision": "CONFIRM",
-      "reason": "This Uber expense is significantly higher than the user's normal Uber and transport spending patterns. Please confirm before saving."
-    }
-  ],
-  "metadata": {
-    "tenant_id": "tenant_001",
-    "flow": "bot_expense_validation"
-  }
-}
-```
-
-## Contracts
-
-The wire contracts are published as JSON Schema (draft 2020-12) in [`schemas/`](schemas/):
-
-| Schema | Describes |
-|---|---|
-| `decision_request.v1.schema.json` | `POST /v1/decisions` request |
-| `decision_response.v1.schema.json` | `POST /v1/decisions` response |
-| `execution_record.v1.schema.json` | Audit record written by the audit sinks |
-| `passport_claims.v2.schema.json` | Claims of the Passport v2 JWT |
-
-They are generated from the models (`python -m axg.schemas`). CI fails if a committed schema drifts from its model, so integrators can pin a schema version and validate against it.
-
-## Plugin Model
-
-Plugins are JSON-only policies. Path: `plugins/<plugin_id>/rules.json`
-
-The engine is domain-agnostic: everything specific to a vertical lives in its plugin. Actions with the most at stake declare an **uncertainty gate**. When the intent behind one of these writes is uncertain (for example, the LLM fell back, or the request came from a bot channel), the decision is forced to `CONFIRM`:
-
-```json
-"uncertainty_gate": {
-  "actions": ["create_expense", "create_income"],
-  "uncertain_sources": ["whatsapp_bot", "telegram_bot", "chat"],
-  "uncertain_source_suffixes": ["_bot"],
-  "threshold": 0.7,
-  "audit_flag": "financial_write_requires_confirmation",
-  "reason": "Intent could not be confidently identified..."
-}
-```
-
-Plugins without a gate never force a confirmation for uncertainty. Their rules, permissions and thresholds still apply.
-
-## CLI
-
-AXG ships with a CLI for local validation and simulation.
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md). CI requires at least 98% test coverage of the core and integrations.
 
 ```bash
-# Validate a plugin
-axg validate-plugin --id finnorte --dir plugins
-
-# Simulate a decision
-axg simulate-decision --plugin finnorte --payload ./examples/request.json --dir plugins
-
-# Verify the audit log hash chain
-axg verify-audit --file /var/log/axg/audit.jsonl
-```
-
-## Project Structure
-
-```text
-axg/
-  api.py              # FastAPI app, caller authentication and request/response logging
-  audit.py            # file/webhook audit sinks
-  auth.py             # API key clients, audience and permission ceilings
-  canonical.py        # canonical JSON used for payload hashes (shared with the SDKs)
-  cli.py              # plugin validation and decision simulation CLI
-  crypto.py           # RS256 Passport v2 signing, JWKS and key rotation
-  engine.py           # deterministic decision orchestration
-  models.py           # Pydantic schemas and enums
-  plugin_loader.py    # plugin loading + schema validation
-  rules.py            # rule operator evaluation
-plugins/
-  finnorte/
-    rules.json        # FinNorte domain policy
-tests/
-  test_audit.py       # audit sink tests
-  test_axg_core.py    # engine + API tests
-  test_cli.py         # CLI tests
-  test_crypto.py      # Passport crypto tests
-```
-
-## Fail-Safe Principles
-
-- **Never fail open** to `ALLOW` on plugin/config issues.
-- Unknown/high-uncertainty financial writes require confirmation.
-- Permission failures produce deterministic `BLOCK`.
-- Signing failures produce deterministic `CONFIRM` or safer.
-- Unauthenticated callers never receive `ALLOW` or a Passport.
-- Admin operations fail closed when not configured.
-- Every decision includes machine-readable and human-readable audit context.
-
-## Local Development
-
-```bash
-pip install -e ".[test]"
-python -m pytest --cov=axg --cov-report=term-missing --cov-fail-under=98
-python -m uvicorn axg.api:app --reload
+pip install -e ".[otel,test]"
+python -m pytest --cov=axg --cov=integrations --cov-fail-under=98
+python -m uvicorn axg.api:app --reload --port 8090
 ```
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)

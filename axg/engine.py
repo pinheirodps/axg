@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from axg.models import (
@@ -119,13 +120,13 @@ class DecisionEngine:
         scores: DecisionScores,
         caller: Caller = TRUSTED_LOCAL,
     ) -> Decision:
-        if self._requires_uncertainty_confirmation(plugin, request, scores):
-            return Decision.CONFIRM
-
         permission_decision = self._permission_decision(plugin, request, caller)
         decisions = [rule.decision for rule in triggered_rules]
         if permission_decision:
             decisions.append(permission_decision)
+        # The gate raises an uncertain write to at least CONFIRM; it never lowers a BLOCK
+        if self._requires_uncertainty_confirmation(plugin, request, scores):
+            decisions.append(Decision.CONFIRM)
         if decisions:
             return max(decisions, key=lambda decision: DECISION_PRECEDENCE[decision])
         if request.action_type not in plugin.actions:
@@ -209,18 +210,21 @@ class DecisionEngine:
         request: DecisionRequest,
         scores: DecisionScores,
     ) -> str:
+        # Most critical rule first
+        sorted_rules = sorted(triggered_rules, key=lambda r: DECISION_PRECEDENCE[r.decision], reverse=True)
+        rule_reasons = " ".join(rule.reason for rule in sorted_rules)
+        if decision == Decision.BLOCK:
+            if any(rule.decision == Decision.BLOCK for rule in triggered_rules):
+                return rule_reasons
+            return "The proposed action is not permitted for this agent."
         if self._requires_uncertainty_confirmation(plugin, request, scores):
             return plugin.uncertainty_gate.reason
         if triggered_rules:
-            # Sort by precedence to show most critical reason first
-            sorted_rules = sorted(triggered_rules, key=lambda r: DECISION_PRECEDENCE[r.decision], reverse=True)
-            return " ".join(rule.reason for rule in sorted_rules)
+            return rule_reasons
         if decision == Decision.ALLOW:
             return "No policy rule was triggered and confidence is within the automatic execution threshold."
         if decision == Decision.SUGGEST:
             return "No policy rule was triggered, but confidence recommends assisted execution."
-        if decision == Decision.BLOCK:
-            return "The proposed action is not permitted for this agent."
         return "The proposal requires confirmation before execution."
 
     def _audit_flags(
@@ -273,38 +277,32 @@ class DecisionEngine:
     def get_execution_record(
         self, request: DecisionRequest, response: DecisionResponse
     ) -> ExecutionRecord:
-        """Generates a complete ExecutionRecord for auditability."""
-        intent = request.intent or {}
-        
-        # Determine who requested this action
-        requested_by = request.user_id
-        if not requested_by and request.agent:
-            requested_by = request.agent.id
-
+        """Generates the audit record (``axg.execution_record.v2``) of a decision."""
+        agent_id = request.agent.id if request.agent else None
         return ExecutionRecord(
             execution_id=request.execution_id,
             tenant_id=request.tenant_id,
             app_id=request.app_id,
+            plugin_id=request.plugin_id,
             source=request.source,
-            requested_by=requested_by,
+            requested_by=request.user_id or agent_id,
+            agent_id=agent_id,
             input_hash=hash_payload(request.payload),
-            
-            # MUAI Insights
-            muai_action_type=request.action_type,
-            muai_confidence=request.llm.confidence,
-            fallback_used=intent.get("fallback_used", False),
-            
-            # AXG Governance
-            axg_decision=response.decision.value,
+            action_type=request.action_type,
+            proposal_model=request.llm.model,
+            proposal_confidence=request.llm.confidence,
+            intent_fallback_used=(request.intent or {}).get("fallback_used") is True,
+            decision=response.decision,
+            policy=response.plugin_version,
+            risk_score=response.scores.risk_score,
             risk_level=response.scores.risk_level,
             rules_triggered=[rule.id for rule in response.rules_triggered],
             audit_flags=response.audit_flags,
             passport_id=response.passport_id,
             human_confirmation_required=response.decision == Decision.CONFIRM,
-            
-            # Initial state for execution
-            execution_status=ExecutionStatus.PENDING,
             shadow_mode=request.shadow_mode,
+            execution_status=ExecutionStatus.PENDING,
+            created_at=datetime.now(timezone.utc).isoformat(),
             metadata=response.metadata,
             trace_id=current_trace_id(),
         )

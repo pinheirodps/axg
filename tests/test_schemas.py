@@ -7,6 +7,7 @@ import pytest
 
 from axg import schemas
 from axg.crypto import key_manager, sign_decision
+from axg.engine import DecisionEngine
 from axg.models import DecisionRequest
 
 
@@ -42,7 +43,7 @@ def test_issued_passport_matches_published_claims_schema():
     jsonschema = pytest.importorskip("jsonschema")
     token, _ = sign_decision(
         execution_id="e1", app_id="finnorte", tenant_id="t1", decision="ALLOW", action_type="create_expense",
-        actionable_payload={"amount": 1}, client_id="muai", policy="finnorte@0.1.0",
+        actionable_payload={"amount": 1}, client_id="orchestrator", policy="finnorte@0.1.0",
     )
     claims = jwt.decode(token, key_manager.public_key, algorithms=["RS256"], audience="finnorte")
     schema = json.loads((schemas.SCHEMA_DIR / "passport_claims.v2.schema.json").read_text(encoding="utf-8"))
@@ -62,6 +63,33 @@ def test_request_example_validates():
     schema = json.loads((schemas.SCHEMA_DIR / "decision_request.v1.schema.json").read_text(encoding="utf-8"))
     example = DecisionRequest(
         execution_id="e1", tenant_id="t1", app_id="finnorte", plugin_id="finnorte", source="api", action_type="x",
-        agent={"id": "muai:finnorte:api", "type": "service", "permissions": ["expense:create"]},
+        agent={"id": "orchestrator:finnorte:api", "type": "service", "permissions": ["expense:create"]},
     ).model_dump(mode="json")
     jsonschema.Draft202012Validator(schema).validate(example)
+
+
+@pytest.mark.asyncio
+async def test_execution_record_validates_against_v2_schema():
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads((schemas.SCHEMA_DIR / "execution_record.v2.schema.json").read_text(encoding="utf-8"))
+    request = DecisionRequest(
+        execution_id="e1", tenant_id="t1", app_id="finnorte", plugin_id="finnorte", source="api",
+        action_type="create_expense", payload={"amount": 5000},
+    )
+    engine = DecisionEngine()
+    record = engine.get_execution_record(request, await engine.decide(request))
+    jsonschema.Draft202012Validator(schema).validate(record.model_dump(mode="json"))
+
+
+def test_superseded_execution_record_v1_is_kept_for_existing_consumers():
+    v1 = json.loads((schemas.SCHEMA_DIR / "execution_record.v1.schema.json").read_text(encoding="utf-8"))
+    assert "muai_action_type" in v1["properties"]
+
+
+@pytest.mark.parametrize("plugin_id", ["claude-code", "finnorte", "pocket_lawyer"])
+def test_bundled_policies_validate_against_the_plugin_schema(plugin_id):
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads((schemas.SCHEMA_DIR / "plugin_manifest.v1.schema.json").read_text(encoding="utf-8"))
+    policy = json.loads((schemas.SCHEMA_DIR.parent / "plugins" / plugin_id / "rules.json").read_text(encoding="utf-8"))
+    jsonschema.Draft202012Validator(schema).validate(policy)
+

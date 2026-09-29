@@ -91,15 +91,35 @@ def test_authenticate(monkeypatch):
     monkeypatch.delenv("AXG_CLIENTS", raising=False)
     assert authenticate(TEST_API_KEY) is None
 
-    unrestricted = client_config(client_id="legacy", key_sha256=hashlib.sha256(b"other").hexdigest().upper())
-    unrestricted.pop("permissions")
-    monkeypatch.setenv("AXG_CLIENTS", json.dumps([client_config(app_ids=["finnorte"]), unrestricted]))
+    no_ceiling = client_config(client_id="legacy", key_sha256=hashlib.sha256(b"other").hexdigest().upper())
+    no_ceiling.pop("permissions")
+    monkeypatch.setenv("AXG_CLIENTS", json.dumps([client_config(app_ids=["finnorte"]), no_ceiling]))
 
     caller = authenticate(TEST_API_KEY)
     assert caller.client_id == "test-client" and caller.authenticated
     assert caller.app_ids == frozenset({"finnorte"})
-    assert authenticate("other").permissions is None  # hash compare is case-insensitive
+    # Hash compare is case-insensitive; a client without a ceiling may grant no permission
+    legacy = authenticate("other")
+    assert legacy.permissions == frozenset()
+    assert legacy.effective_permissions(["expense:create"]) == []
     assert authenticate("wrong") is None
+
+
+@pytest.mark.asyncio
+async def test_anonymous_caller_cannot_vouch_for_agent_permissions():
+    """In optional mode, claimed permissions must not turn a permission BLOCK into a CONFIRM."""
+    from axg.auth import ANONYMOUS
+    from axg.engine import DecisionEngine
+    from axg.models import Decision, DecisionRequest
+
+    request = DecisionRequest(
+        execution_id="anon", tenant_id="t", app_id="finnorte", plugin_id="finnorte", source="api",
+        action_type="create_expense", payload={"amount": 10},
+        agent={"id": "claims-everything", "permissions": ["expense:create"]}, llm={"confidence": 0.95},
+    )
+    response = await DecisionEngine().decide(request, ANONYMOUS)
+    assert response.decision == Decision.BLOCK
+    assert response.passport is None
 
 
 # ── API: authentication and audience binding ─────────────────────────────────
@@ -124,7 +144,10 @@ def test_api_rejects_invalid_credentials_even_in_optional_mode(monkeypatch, api_
 
 def test_api_optional_mode_never_allows_anonymous(monkeypatch):
     monkeypatch.setenv("AXG_AUTH_MODE", "optional")
-    body = TestClient(app).post("/v1/decisions", json=_payload()).json()
+    # An action that needs no permission, so only the missing authentication prevents ALLOW
+    read = {**_payload(), "app_id": "claude-code", "plugin_id": "claude-code", "action_type": "Read",
+            "payload": {"file_path": "README.md"}}
+    body = TestClient(app).post("/v1/decisions", json=read).json()
     assert body["decision"] == "CONFIRM"
     assert body["passport"] is None
     assert "unauthenticated_caller" in body["audit_flags"]
@@ -205,8 +228,12 @@ async def test_execution_record_stores_passport_id_not_token():
 
 @pytest.mark.asyncio
 async def test_anonymous_caller_in_engine():
-    response = await DecisionEngine().decide(decision_request(), ANONYMOUS)
+    read = decision_request().model_copy(update={
+        "app_id": "claude-code", "plugin_id": "claude-code", "action_type": "Read", "payload": {"file_path": "README.md"},
+    })
+    response = await DecisionEngine().decide(read, ANONYMOUS)
     assert response.decision == Decision.CONFIRM
+    assert "unauthenticated_caller" in response.audit_flags
     assert response.passport is None
 
 

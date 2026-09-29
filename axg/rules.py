@@ -1,26 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, get_args
 
-from axg.models import ConditionGroup, PolicyRule, RuleCondition
+from axg.models import ConditionGroup, PolicyRule, RuleCondition, RuleOperator
 
 
 MISSING = object()
 
 
 class RuleEngine:
-    supported_operators = {
-        "eq",
-        "neq",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-        "in",
-        "not_in",
-        "exists",
-        "contains",
-    }
+    supported_operators = set(get_args(RuleOperator))
 
     def evaluate_rules(self, rules: list[PolicyRule], data: dict[str, Any]) -> list[PolicyRule]:
         return [rule for rule in rules if self.evaluate_group(rule.condition, data)]

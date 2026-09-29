@@ -1,0 +1,11 @@
+{
+  "execution_id": "quickstart-bash-1",
+  "tenant_id": "acme",
+  "app_id": "claude-code",
+  "plugin_id": "claude-code",
+  "source": "coding_agent",
+  "action_type": "Bash",
+  "payload": {"command": "rm -rf / --no-preserve-root"},
+  "agent": {"id": "coding-agent-1", "type": "agent"},
+  "llm": {"model": "any-model", "confidence": 0.99}
+}

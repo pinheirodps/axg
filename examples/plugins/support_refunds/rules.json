@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/plugin_manifest.v1.schema.json",
+  "schema_version": "axg.plugin_manifest.v1",
+  "plugin": "support_refunds",
+  "version": "1.0.0",
+  "domain": "customer-support",
+  "thresholds": {
+    "allow_min_confidence": 0.85,
+    "suggest_min_confidence": 0.6,
+    "high_risk_threshold": 0.7
+  },
+  "actions": {
+    "issue_refund": {"required_permissions": ["refunds:write"], "base_risk": 0.3},
+    "lookup_order": {"base_risk": 0.05}
+  },
+  "rules": [
+    {
+      "id": "refund_above_limit",
+      "description": "Refunds above 500 need a human.",
+      "condition": {"all": [
+        {"field": "action_type", "operator": "eq", "value": "issue_refund"},
+        {"field": "payload.amount", "operator": "gt", "value": 500}
+      ]},
+      "decision": "CONFIRM",
+      "reason": "Refunds above 500 require approval by a support lead.",
+      "risk_delta": 0.3,
+      "audit_flags": ["refund_above_limit"]
+    },
+    {
+      "id": "refund_to_new_account",
+      "description": "Never refund to a payment method added in the same conversation.",
+      "condition": {"all": [
+        {"field": "action_type", "operator": "eq", "value": "issue_refund"},
+        {"field": "payload.destination_added_in_session", "operator": "eq", "value": true}
+      ]},
+      "decision": "BLOCK",
+      "reason": "Refunds to a payment method added during the conversation are not allowed.",
+      "risk_delta": 0.6
+    }
+  ],
+  "uncertainty_gate": {
+    "actions": ["issue_refund"],
+    "uncertain_sources": ["chat"],
+    "threshold": 0.7,
+    "audit_flag": "refund_requires_confirmation",
+    "reason": "The refund request was not understood with confidence. Confirm before paying out."
+  }
+}

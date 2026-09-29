@@ -1,0 +1,235 @@
+{
+  "$defs": {
+    "Decision": {
+      "enum": [
+        "ALLOW",
+        "SUGGEST",
+        "CONFIRM",
+        "BLOCK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "ExecutionStatus": {
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed"
+      ],
+      "title": "ExecutionStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/execution_record.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Audit record of one decision, written by the audit sinks.\n\nFramework-neutral: it describes the proposal (whatever agent or orchestrator produced it),\nthe decision and the execution state, with no assumption about the caller.",
+  "properties": {
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "agent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Id"
+    },
+    "app_id": {
+      "title": "App Id",
+      "type": "string"
+    },
+    "audit_flags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Audit Flags",
+      "type": "array"
+    },
+    "created_at": {
+      "description": "ISO 8601 UTC time of the decision",
+      "title": "Created At",
+      "type": "string"
+    },
+    "decision": {
+      "$ref": "#/$defs/Decision"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "execution_result": {
+      "default": null,
+      "title": "Execution Result"
+    },
+    "execution_status": {
+      "$ref": "#/$defs/ExecutionStatus",
+      "default": "pending"
+    },
+    "human_confirmation_required": {
+      "default": false,
+      "title": "Human Confirmation Required",
+      "type": "boolean"
+    },
+    "input_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "SHA-256 of the canonical request payload",
+      "title": "Input Hash"
+    },
+    "intent_fallback_used": {
+      "default": false,
+      "title": "Intent Fallback Used",
+      "type": "boolean"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "passport_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Passport jti; the token itself is never stored",
+      "title": "Passport Id"
+    },
+    "plugin_id": {
+      "title": "Plugin Id",
+      "type": "string"
+    },
+    "policy": {
+      "description": "plugin@version that produced the decision",
+      "title": "Policy",
+      "type": "string"
+    },
+    "proposal_confidence": {
+      "default": 0.0,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Proposal Confidence",
+      "type": "number"
+    },
+    "proposal_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Model that proposed the action, if reported",
+      "title": "Proposal Model"
+    },
+    "requested_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "user_id, or the agent id when there is no user",
+      "title": "Requested By"
+    },
+    "risk_level": {
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "risk_score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Risk Score",
+      "type": "number"
+    },
+    "rules_triggered": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rules Triggered",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "axg.execution_record.v2",
+      "default": "axg.execution_record.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shadow_mode": {
+      "default": false,
+      "title": "Shadow Mode",
+      "type": "boolean"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "W3C trace id of the decision, linking this record to its OpenTelemetry trace",
+      "title": "Trace Id"
+    }
+  },
+  "required": [
+    "execution_id",
+    "tenant_id",
+    "app_id",
+    "plugin_id",
+    "source",
+    "action_type",
+    "decision",
+    "policy",
+    "risk_score",
+    "risk_level",
+    "created_at"
+  ],
+  "title": "ExecutionRecord",
+  "type": "object"
+}

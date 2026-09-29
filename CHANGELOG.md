@@ -2,8 +2,24 @@
 
 ## Unreleased
 
+### Breaking
+
+- Audit records are now `axg.execution_record.v2`, with framework-neutral fields: `muai_action_type`, `muai_confidence`, `muai_schema_version`, `fallback_used` and `axg_decision` become `action_type`, `proposal_confidence`, `intent_fallback_used` and `decision`. New fields: `plugin_id`, `agent_id`, `proposal_model`, `policy`, `risk_score` and a UTC `created_at`. `execution_record.v1.schema.json` stays published for existing consumers.
+- An `AXG_CLIENTS` entry without `permissions` grants its agents no permission (it used to grant any). Set `"permissions": ["*"]` to delegate everything.
+- Anonymous callers (`AXG_AUTH_MODE=optional`) can no longer vouch for agent permissions, so actions that require a permission are `BLOCK`ed for them instead of `CONFIRM`ed.
+- Policy rules must use a supported operator. An unknown operator used to make its rule silently never match; now the policy fails validation (and AXG answers `CONFIRM` until it is fixed).
+
+### Fixed
+
+- The uncertainty gate returned `CONFIRM` before rules and permissions were weighed, so an agent without the required permission sending an uncertain write got `CONFIRM` instead of `BLOCK`. The gate now only raises a decision to `CONFIRM`; it never lowers a `BLOCK`.
+- The image creates `/var/lib/axg` owned by the `axg` user, so an audit volume mounted there is writable by the non-root process.
+
 ### Added
 
+- Documentation in `docs/`: concepts, writing policies, Passport, API and contracts, configuration and deployment, security model, observability. The README is rewritten around a working quickstart.
+- `plugin_manifest.v1.schema.json`: editor validation and completion for policy files (`"$schema"`). The bundled policies are tested against it.
+- `examples/`: quickstart requests (`allow.json`, `block.json`) and a complete example policy (`examples/plugins/support_refunds`), all exercised by the test suite so the documentation cannot drift.
+- Images for `linux/amd64` and `linux/arm64`, and continuous deployment of `main` with a health check and automatic rollback.
 - OpenTelemetry: one `axg.decide` span per decision (joined to the caller's W3C `traceparent`), an `axg.rule.triggered` event per matched rule, and the metrics `axg.decisions`, `axg.rules.triggered` and `axg.decision.duration`. The core depends on `opentelemetry-api` only (no-op without an SDK). The `axg[otel]` extra ships in the image and exports over OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `ExecutionRecord.trace_id` links audit records to traces. Payloads, reasons, intents and Passports never reach telemetry.
 - `integrations/claude_code`: Claude Code `PreToolUse` hook. BLOCK → `deny`, CONFIRM/SUGGEST → `ask`, ALLOW → normal permission flow (auto `allow` is opt-in), AXG unavailable → `ask` (or `deny`). New example policy `plugins/claude-code`: destructive commands and piped remote scripts are blocked; force pushes, deploys and secret files require confirmation.
 - `integrations/agt-dotnet`: `Axg.AgentGovernance`, an `IExternalPolicyBackend` for the Microsoft Agent Governance Toolkit (verified on `Microsoft.AgentGovernance` 5.0.0). ALLOW with a Passport allows; SUGGEST and CONFIRM deny with `RequiresApproval`; BLOCK denies; errors fail closed. `AxgDecisionSink` hands the Passport to the host, because the toolkit drops backend metadata.
