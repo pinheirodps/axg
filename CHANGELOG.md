@@ -4,6 +4,7 @@
 
 ### Added
 
+- OpenTelemetry: one `axg.decide` span per decision (joined to the caller's W3C `traceparent`), an `axg.rule.triggered` event per matched rule, and the metrics `axg.decisions`, `axg.rules.triggered` and `axg.decision.duration`. The core depends on `opentelemetry-api` only (no-op without an SDK). The `axg[otel]` extra ships in the image and exports over OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `ExecutionRecord.trace_id` links audit records to traces. Payloads, reasons, intents and Passports never reach telemetry.
 - `integrations/claude_code`: Claude Code `PreToolUse` hook. BLOCK → `deny`, CONFIRM/SUGGEST → `ask`, ALLOW → normal permission flow (auto `allow` is opt-in), AXG unavailable → `ask` (or `deny`). New example policy `plugins/claude-code`: destructive commands and piped remote scripts are blocked; force pushes, deploys and secret files require confirmation.
 - `integrations/agt-dotnet`: `Axg.AgentGovernance`, an `IExternalPolicyBackend` for the Microsoft Agent Governance Toolkit (verified on `Microsoft.AgentGovernance` 5.0.0). ALLOW with a Passport allows; SUGGEST and CONFIRM deny with `RequiresApproval`; BLOCK denies; errors fail closed. `AxgDecisionSink` hands the Passport to the host, because the toolkit drops backend metadata.
 - Published JSON Schemas for the wire contracts in `schemas/` (`decision_request.v1`, `decision_response.v1`, `execution_record.v1`, `passport_claims.v2`), generated with `python -m axg.schemas` and checked in CI.
