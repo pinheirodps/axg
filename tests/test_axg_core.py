@@ -34,6 +34,8 @@ def request_data(**overrides):
             "type": "service",
             "permissions": [
                 "expense:create",
+                "income:create",
+                "transaction:create",
                 "transaction:categorize",
                 "subscription:detect",
             ],
@@ -387,7 +389,7 @@ async def test_decision_log_is_structured_for_flow_debugging(caplog):
 
 
 @pytest.mark.asyncio
-async def test_poc_uber_1500_contract_without_agent_requires_confirmation():
+async def test_poc_uber_1500_contract_requires_confirmation():
     data = request_data(
         execution_id="test_exec_uber_1500_001",
         source="whatsapp",
@@ -414,7 +416,6 @@ async def test_poc_uber_1500_contract_without_agent_requires_confirmation():
             "environment": "production-validation",
         },
     )
-    data.pop("agent")
 
     response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
 
@@ -605,7 +606,6 @@ async def test_poc_honorato_restaurant_subscription_is_not_allowed():
             "environment": "production-validation",
         },
     )
-    data.pop("agent")
 
     response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
 
@@ -643,7 +643,6 @@ async def test_poc_recurring_condominium_subscription_is_allowed():
         },
         llm={"model": "llama-3.3-70b", "confidence": 0.93, "raw_output": {}},
     )
-    data.pop("agent")
 
     response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
 
@@ -831,3 +830,41 @@ def test_api_plugins_reload(monkeypatch: pytest.MonkeyPatch) -> None:
     # Fail closed: should be 401
     assert response.status_code == 401
     assert "not configured" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "permission"),
+    [
+        ("create_expense", "expense:create"),
+        ("add_expense", "expense:create"),
+        ("create_income", "income:create"),
+        ("add_income", "income:create"),
+        ("create_transaction", "transaction:create"),
+        ("categorize_transaction", "transaction:categorize"),
+        ("detect_subscription", "subscription:detect"),
+    ],
+)
+async def test_finnorte_actions_require_their_permission(action, permission):
+    """A-16: an agent without the action's permission is blocked; with it, policy decides as usual."""
+    engine = DecisionEngine()
+    base = request_data(action_type=action, payload={"amount": 10, "currency": "EUR", "proposed_action": action})
+
+    without = dict(base, agent={"id": "muai:finnorte:whatsapp", "type": "service", "permissions": []})
+    blocked = await engine.decide(DecisionRequest.model_validate(without))
+    assert blocked.decision == Decision.BLOCK
+
+    with_permission = dict(base, agent={"id": "muai:finnorte:whatsapp", "type": "service", "permissions": [permission]})
+    decided = await engine.decide(DecisionRequest.model_validate(with_permission))
+    assert decided.decision != Decision.BLOCK
+
+
+@pytest.mark.asyncio
+async def test_finnorte_write_without_agent_is_blocked():
+    """A-16: unidentified agents cannot write through the finnorte policy."""
+    data = request_data()
+    data.pop("agent")
+    response = await DecisionEngine().decide(DecisionRequest.model_validate(data))
+    assert response.decision == Decision.BLOCK
+    assert response.passport is None
+
