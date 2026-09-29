@@ -12,9 +12,16 @@ dependencies = [
     "PyJWT>=2.8.0",
     "cryptography>=42.0.0",
     "httpx>=0.26.0",
+    # API only: a no-op until a host installs an SDK, so embedding AXG never imposes a backend
+    "opentelemetry-api>=1.27.0",
 ]
 
 [project.optional-dependencies]
+# OTLP/HTTP export for the AXG server (enabled by OTEL_EXPORTER_OTLP_ENDPOINT)
+otel = [
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+]
 test = [
     "pytest>=8.0.0",
     "pytest-cov>=5.0.0",
@@ -22,6 +29,7 @@ test = [
     "respx>=0.21.0",
     "jsonschema>=4.23.0",
     "httpx>=0.26.0",
+    "opentelemetry-sdk>=1.27.0",
 ]
 
 [tool.pytest.ini_options]

@@ -22,7 +22,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip setuptools
-        pip install .[test] ./sdks/axg-python-sdk
+        pip install ".[otel,test]" ./sdks/axg-python-sdk
         pip install pytest pytest-asyncio pytest-cov httpx pip-audit
     - name: Audit dependencies
       # Audit the project's declared dependencies, not the runner's own tooling (pip, setuptools)

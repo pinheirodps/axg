@@ -121,6 +121,9 @@ class ExecutionRecord(BaseModel):
     error: str | None = None
     created_at: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    trace_id: str | None = Field(
+        default=None, description="W3C trace id of the decision, linking this record to its OpenTelemetry trace"
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

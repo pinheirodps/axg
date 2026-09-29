@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Annotated
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 
 from axg.auth import ANONYMOUS, Caller, authenticate, auth_mode
 from axg.engine import DecisionEngine
@@ -12,13 +12,15 @@ from axg.models import DecisionRequest, DecisionResponse
 from axg.audit import audit_manager
 from axg.crypto import get_public_key, get_jwks, key_manager
 from axg.limits import BodySizeLimitMiddleware, rate_limiter
+from axg.telemetry import AXG_VERSION, configure_from_env, continue_trace
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("uvicorn.error")
+configure_from_env()
 
 app = FastAPI(
     title="AXG - Agent Execution Guard",
-    version="0.2.1",
+    version=AXG_VERSION,
     description="Deterministic execution control plane for AI agent actions.",
 )
 app.add_middleware(BodySizeLimitMiddleware)
@@ -70,6 +72,7 @@ def resolve_caller(authorization: Annotated[str | None, Header()] = None) -> Cal
 @app.post("/v1/decisions", response_model=DecisionResponse)
 async def create_decision(
     request: DecisionRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     caller: Annotated[Caller, Depends(resolve_caller)],
 ) -> DecisionResponse:
@@ -100,10 +103,10 @@ async def create_decision(
         )
     )
 
-    response = await engine.decide(request, caller)
-    
-    # Audit recording using the new ExecutionRecord Spine
-    execution_record = engine.get_execution_record(request, response)
+    with continue_trace(http_request.headers):
+        response = await engine.decide(request, caller)
+        # Audit recording using the ExecutionRecord spine, linked to the caller's trace
+        execution_record = engine.get_execution_record(request, response)
     background_tasks.add_task(audit_manager.record_decision, execution_record)
     
     logger.info(

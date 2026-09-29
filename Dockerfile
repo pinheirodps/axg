@@ -11,7 +11,8 @@ COPY pyproject.toml README.md ./
 COPY axg ./axg
 COPY plugins ./plugins
 
-RUN pip install --no-cache-dir . \
+# [otel]: OTLP export, enabled only when OTEL_EXPORTER_OTLP_ENDPOINT is set
+RUN pip install --no-cache-dir ".[otel]" \
     && useradd --system --uid 10001 --no-create-home axg \
     && chown -R axg /app
 
