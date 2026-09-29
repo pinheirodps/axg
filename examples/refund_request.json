@@ -1,0 +1,11 @@
+{
+  "execution_id": "refund-1",
+  "tenant_id": "acme",
+  "app_id": "support",
+  "plugin_id": "support_refunds",
+  "source": "api",
+  "action_type": "issue_refund",
+  "payload": {"order_id": "A-1001", "amount": 800, "currency": "EUR"},
+  "agent": {"id": "support-agent", "type": "agent", "permissions": ["refunds:write"]},
+  "llm": {"confidence": 0.93}
+}

@@ -1,0 +1,11 @@
+{
+  "execution_id": "quickstart-read-1",
+  "tenant_id": "acme",
+  "app_id": "claude-code",
+  "plugin_id": "claude-code",
+  "source": "coding_agent",
+  "action_type": "Read",
+  "payload": {"file_path": "README.md"},
+  "agent": {"id": "coding-agent-1", "type": "agent"},
+  "llm": {"model": "any-model", "confidence": 0.95}
+}

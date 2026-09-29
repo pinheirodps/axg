@@ -18,13 +18,13 @@ async def test_passport_cryptographic_validation_e2e():
     request = DecisionRequest(
         execution_id="exec_rigor_10_10",
         tenant_id="enterprise_client",
-        app_id="muai_console",
+        app_id="console",
         plugin_id="finnorte",
         source="test_runner",
         action_type="create_expense",
         payload=payload,
         llm={"confidence": 0.95},
-        agent={"id": "muai:muai_console:test", "type": "service", "permissions": ["expense:create"]},
+        agent={"id": "orchestrator:console:test", "type": "service", "permissions": ["expense:create"]},
     )
     
     # 2. Process decision to get the Passport (AWAITED)
@@ -40,7 +40,7 @@ async def test_passport_cryptographic_validation_e2e():
             passport_jwt,
             key_manager.public_key,
             algorithms=["RS256"],
-            audience="muai_console",
+            audience="console",
             issuer="axg-engine"
         )
         

@@ -31,7 +31,7 @@ def request_data(**overrides):
         "plugin_id": "finnorte",
         "user_id": "test_user_001",
         "agent": {
-            "id": "muai_whatsapp",
+            "id": "expense_bot",
             "type": "service",
             "permissions": [
                 "expense:create",
@@ -858,11 +858,11 @@ async def test_finnorte_actions_require_their_permission(action, permission):
     engine = DecisionEngine()
     base = request_data(action_type=action, payload={"amount": 10, "currency": "EUR", "proposed_action": action})
 
-    without = dict(base, agent={"id": "muai:finnorte:whatsapp", "type": "service", "permissions": []})
+    without = dict(base, agent={"id": "orchestrator:finnorte:whatsapp", "type": "service", "permissions": []})
     blocked = await engine.decide(DecisionRequest.model_validate(without))
     assert blocked.decision == Decision.BLOCK
 
-    with_permission = dict(base, agent={"id": "muai:finnorte:whatsapp", "type": "service", "permissions": [permission]})
+    with_permission = dict(base, agent={"id": "orchestrator:finnorte:whatsapp", "type": "service", "permissions": [permission]})
     decided = await engine.decide(DecisionRequest.model_validate(with_permission))
     assert decided.decision != Decision.BLOCK
 

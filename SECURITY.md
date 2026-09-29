@@ -32,11 +32,12 @@ In scope:
 - Passport issuance and verification, including the Python and Node SDKs in `sdks/`
 - Canonical hashing, key management and JWKS
 - Plugin loading and the rule engine
+- The integrations in `integrations/` (AgentCore interceptor, AGT backend, Claude Code hook)
 - The published container image
 
 Out of scope:
 
-- Deployments that ignore the [Security Model](README.md#security-model), for example `AXG_AUTH_MODE=optional` in production, or AXG exposed without TLS.
+- Deployments that ignore the [security model](docs/security-model.md), for example `AXG_AUTH_MODE=optional` in production, or AXG exposed without TLS.
 - Findings that need a compromised signing key or host.
 - Denial of service through traffic volume alone. Please still report bypasses of the request size and rate limits.
 

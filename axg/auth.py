@@ -6,7 +6,7 @@ assert for its agents.
 
 Clients are configured through ``AXG_CLIENTS`` (JSON list); keys are stored as SHA-256 hashes:
 
-    [{"client_id": "muai", "key_sha256": "<hex>", "app_ids": ["finnorte"], "permissions": ["*"]}]
+    [{"client_id": "orchestrator", "key_sha256": "<hex>", "app_ids": ["finnorte"], "permissions": ["*"]}]
 
 ``AXG_AUTH_MODE``: ``required`` (default) rejects unauthenticated calls with 401; ``optional``
 (migration only) evaluates them but never returns ALLOW nor issues a Passport.
