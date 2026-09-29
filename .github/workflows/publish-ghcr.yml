@@ -22,6 +22,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -37,6 +42,8 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=ref,event=branch
@@ -46,9 +53,63 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           # Supply-chain attestations published with the image
           provenance: mode=max
           sbom: true
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions: {}
+    concurrency:
+      group: axg-production-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to the VPS with health check and rollback
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          COMMIT: ${{ github.sha }}
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USERNAME }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          envs: IMAGE,COMMIT
+          script: |
+            set -eu
+            cd ~/deployment
+            NEW="$IMAGE:sha-$COMMIT"
+            healthy() {
+              for i in $(seq 1 30); do
+                docker exec axg python -c "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=5)" 2>/dev/null && return 0
+                sleep 2
+              done
+              return 1
+            }
+            for attempt in 1 2 3; do
+              docker pull "$NEW" && break
+              [ "$attempt" = 3 ] && { echo "::error::Failed to pull $NEW"; exit 1; }
+              sleep 10
+            done
+            PREV=$(docker inspect -f '{{.Image}}' axg)
+            docker tag "$PREV" axg:previous
+            docker tag "$NEW" "$IMAGE:latest"
+            docker compose -f docker-compose.ia.yml up -d --no-deps axg
+            if healthy; then
+              docker image prune -f
+            else
+              echo "::error::AXG $COMMIT failed its health check; rolling back"
+              docker logs --tail 50 axg || true
+              docker tag axg:previous "$IMAGE:latest"
+              docker compose -f docker-compose.ia.yml up -d --no-deps axg
+              healthy && echo "Rolled back" || echo "::error::Rollback is unhealthy too"
+              exit 1
+            fi
