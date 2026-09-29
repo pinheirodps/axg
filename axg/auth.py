@@ -50,8 +50,9 @@ class Caller:
 
 # In-process use of the engine (library/embedded mode): the host application is the caller
 TRUSTED_LOCAL = Caller("local", True, frozenset({WILDCARD}), None)
-# Unauthenticated network caller in optional mode: evaluated, but never ALLOW
-ANONYMOUS = Caller("anonymous", False, frozenset({WILDCARD}), None)
+# Unauthenticated network caller in optional mode: evaluated, but never ALLOW, and it cannot
+# vouch for any agent permission (claimed permissions must not turn a BLOCK into a CONFIRM)
+ANONYMOUS = Caller("anonymous", False, frozenset({WILDCARD}), frozenset())
 
 
 def auth_mode() -> str:
@@ -92,10 +93,10 @@ def authenticate(api_key: str) -> Caller | None:
     if match is None:
         return None
 
-    permissions = match.get("permissions")
     return Caller(
         client_id=str(match["client_id"]),
         authenticated=True,
         app_ids=frozenset(match.get("app_ids") or []),
-        permissions=None if permissions is None else frozenset(permissions),
+        # Least privilege: a client without a permissions ceiling may grant its agents none
+        permissions=frozenset(match.get("permissions") or []),
     )
