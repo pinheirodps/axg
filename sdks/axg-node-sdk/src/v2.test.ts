@@ -119,3 +119,30 @@ describe('InMemoryReplayCache', () => {
     expect(cache.checkAndStore('old', now + 60)).toBe(false);
   });
 });
+
+describe('verifyMcpToolCall', () => {
+  const args = { merchant: 'Padaria', amount: 12.5, tags: ['a', 'b'] };
+  const authorized = { ...args, proposed_action: 'create_expense', suggested_category: 'Food' };
+
+  async function meta(payload: Record<string, any> = authorized) {
+    const token = await passport({ ver: 2, jti: `m-${Math.random()}`, payload_hash: hashPayload(payload) });
+    return { 'io.axg/passport': token, 'io.axg/actionable_payload': payload };
+  }
+
+  it('accepts the exact authorized call (Cedar context argument ignored)', async () => {
+    const { verifyMcpToolCall } = await import('./index');
+    const claims = await verifyMcpToolCall(await meta(), 'create_expense', { ...args, axg: { decision: 'ALLOW' } }, { appId: 'finnorte', publicKey });
+    expect(claims.action_type).toBe('create_expense');
+  });
+
+  it.each([
+    ['missing passport', async () => ({}), 'create_expense', args, 'MISSING_PASSPORT'],
+    ['changed argument', meta, 'create_expense', { ...args, amount: 9999 }, 'ARGUMENTS_MISMATCH'],
+    ['extra argument', meta, 'create_expense', { ...args, account_id: 'x' }, 'ARGUMENTS_MISMATCH'],
+    ['nested change', meta, 'create_expense', { ...args, tags: ['a'] }, 'ARGUMENTS_MISMATCH'],
+    ['other tool', meta, 'delete_account', args, 'ACTION_TYPE_MISMATCH'],
+  ])('rejects %s', async (_name, makeMeta, tool, callArgs, code) => {
+    const { verifyMcpToolCall } = await import('./index');
+    await expectCode(verifyMcpToolCall(await (makeMeta as any)(), tool as string, callArgs as any, { appId: 'finnorte', publicKey }), code as string);
+  });
+});

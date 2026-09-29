@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `integrations/agentcore`: AWS Bedrock AgentCore Gateway REQUEST interceptor (Lambda, standard library only). Every MCP `tools/call` becomes an AXG decision. On ALLOW, the call continues with the Passport and the authorized payload in `params._meta`. Otherwise it is short-circuited with a readable `isError` tool result, and it fails closed when AXG is unavailable.
+- SDKs: `verify_mcp_tool_call` (Python) and `verifyMcpToolCall` (Node) for MCP tools. They verify the Passport for that tool, and check that every received argument matches what AXG authorized.
+
 ## 0.2.1
 
 ### Security

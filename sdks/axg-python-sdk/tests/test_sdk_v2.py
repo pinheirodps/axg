@@ -187,3 +187,54 @@ async def test_client_reuses_one_jwks_client(keys, monkeypatch):
 
     factory.assert_called_once_with("https://axg.example/.well-known/jwks.json")
     assert jwks_client.get_signing_key_from_jwt.call_count == 3
+
+
+# ── MCP tool-side verification ───────────────────────────────────────────────
+
+def _mcp_meta(pem, authorized, **claims):
+    from axg_python_sdk import PASSPORT_META_KEY, PAYLOAD_META_KEY
+
+    token = passport(pem, ver=2, jti=claims.pop("jti", "m1"), payload_hash=hash_payload(authorized), **claims)
+    return {PASSPORT_META_KEY: token, PAYLOAD_META_KEY: authorized}
+
+
+def test_mcp_tool_call_verifies(keys):
+    from axg_python_sdk import verify_mcp_tool_call
+
+    pem, public = keys
+    arguments = {"merchant": "Padaria", "amount": 12.5}
+    authorized = {**arguments, "proposed_action": "create_expense", "suggested_category": "Food"}
+    meta = _mcp_meta(pem, authorized)
+    claims = verify_mcp_tool_call(meta, "create_expense", {**arguments, "axg": {"decision": "ALLOW"}}, "finnorte",
+                                  tenant_id="tenant_a", public_key=public)
+    assert claims["action_type"] == "create_expense"
+
+
+@pytest.mark.parametrize(
+    ("case", "code"),
+    [("missing", "MISSING_PASSPORT"), ("changed_arg", "ARGUMENTS_MISMATCH"), ("extra_arg", "ARGUMENTS_MISMATCH"),
+     ("other_tool", "ACTION_TYPE_MISMATCH"), ("tampered_payload", "PAYLOAD_TAMPERED")],
+)
+def test_mcp_tool_call_rejections(keys, case, code):
+    from axg_python_sdk import PAYLOAD_META_KEY, verify_mcp_tool_call
+
+    pem, public = keys
+    arguments = {"merchant": "Padaria", "amount": 12.5}
+    authorized = {**arguments, "proposed_action": "create_expense"}
+    meta = _mcp_meta(pem, authorized)
+    tool, args = "create_expense", dict(arguments)
+    if case == "missing":
+        meta = {}
+    elif case == "changed_arg":
+        args["amount"] = 9999
+    elif case == "extra_arg":
+        args["account_id"] = "acc_attacker"
+    elif case == "other_tool":
+        tool = "delete_account"
+    else:
+        meta[PAYLOAD_META_KEY] = {**authorized, "amount": 9999}
+        args["amount"] = 9999
+
+    with pytest.raises(AxgVerificationError) as exc:
+        verify_mcp_tool_call(meta, tool, args, "finnorte", public_key=public)
+    assert exc.value.code == code
