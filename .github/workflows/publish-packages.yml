@@ -42,8 +42,10 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
         with:
           packages-dir: dist/
+          skip-existing: true
           # Uses OIDC Trusted Publishing by default when id-token: write is set.
           # If PYPI_API_TOKEN secret exists, it falls back to token auth.
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -83,8 +85,10 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        continue-on-error: true
         with:
           packages-dir: sdks/axg-python-sdk/dist/
+          skip-existing: true
           password: ${{ secrets.PYPI_API_TOKEN }}
 
   publish-npm-node-sdk:
@@ -116,6 +120,13 @@ jobs:
           npm test
 
       - name: Publish to npm
+        if: env.NODE_AUTH_TOKEN != ''
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Report missing npm token
+        if: env.NODE_AUTH_TOKEN == ''
+        run: echo "::notice::NPM_TOKEN secret is not configured; skipping npm publish."
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
