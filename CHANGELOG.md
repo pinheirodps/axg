@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1
+
+### Security
+
+- Request bodies are capped by `AXG_MAX_BODY_BYTES` (default 256 KiB, chunked uploads included), with `413` on overflow. Decisions are rate-limited per caller by `AXG_RATE_LIMIT_PER_MINUTE` (default 600), with `429` and `Retry-After`.
+- The audit file is hash-chained (`prev_hash` / `record_hash`). New `axg verify-audit` command.
+- The webhook audit sink retries up to 3 times.
+- Remote plugins: every validated IP is tried on connection failure, and `Host` keeps the original authority, non-default port included.
+- Base image pinned by digest. Actions pinned by commit SHA. `pip-audit` and `npm audit` run in CI. Images are published with an SBOM and provenance. Dependabot is enabled.
+- Node SDK dev dependencies updated: `npm audit` reports 0 vulnerabilities.
+- Added `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `CODEOWNERS`. Removed internal working documents from the repository.
+
 ## 0.2.0
 
 ### Breaking changes

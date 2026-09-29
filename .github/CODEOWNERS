@@ -1,0 +1,9 @@
+* @pinheirodps
+
+# Security-critical code: changes always need an explicit review
+/axg/auth.py @pinheirodps
+/axg/crypto.py @pinheirodps
+/axg/canonical.py @pinheirodps
+/axg/limits.py @pinheirodps
+/sdks/ @pinheirodps
+/.github/ @pinheirodps

@@ -126,24 +126,32 @@ class PluginLoader:
 
         # Resolve and validate IP (DNS Pinning start)
         # getaddrinfo blocks: keep DNS resolution off the event loop
-        safe_ip = await anyio.to_thread.run_sync(self._get_safe_ip, hostname)
-        if not safe_ip:
+        safe_ips = await anyio.to_thread.run_sync(self._get_safe_ips, hostname)
+        if not safe_ips:
             raise PluginLoadError(f"Remote plugin host '{hostname}' is unsafe or resolves to private IP.")
 
-        # Reconstruct URL using IP to prevent rebinding
         port_str = f":{parsed.port}" if parsed.port else ""
-        ip_url = parsed._replace(netloc=f"{safe_ip}{port_str}").geturl()
-
-        logger.info(f"Fetching remote AXG plugin: {hostname} ({safe_ip})")
+        # Host keeps the original authority (non-default port included) for virtual hosting
+        host_header = f"{hostname}:{parsed.port}" if parsed.port and parsed.port != 443 else hostname
         try:
             # We use headers for Host and extensions for SNI to preserve TLS verification.
             # We follow NO redirects to prevent DNS rebinding or SSRF escalation after validation.
             async with httpx.AsyncClient(timeout=10.0, verify=True, follow_redirects=False) as client:
-                response = await client.get(
-                    ip_url,
-                    headers={"Host": hostname},
-                    extensions={"sni_hostname": hostname}
-                )
+                for index, safe_ip in enumerate(safe_ips):
+                    # Reconstruct URL using the validated IP to prevent rebinding
+                    ip_url = parsed._replace(netloc=f"{safe_ip}{port_str}").geturl()
+                    logger.info(f"Fetching remote AXG plugin: {hostname} ({safe_ip})")
+                    try:
+                        response = await client.get(
+                            ip_url,
+                            headers={"Host": host_header},
+                            extensions={"sni_hostname": hostname}
+                        )
+                        break
+                    except (httpx.ConnectError, httpx.ConnectTimeout):
+                        # Only connection failures try the next address; the server was never reached
+                        if index == len(safe_ips) - 1:
+                            raise
                 response.raise_for_status()
                 data = response.json()
             return Plugin.model_validate(data)
@@ -152,9 +160,9 @@ class PluginLoader:
         except (json.JSONDecodeError, ValidationError) as exc:
             raise PluginLoadError(f"Remote plugin from {hostname} is invalid: {exc}") from exc
 
-    def _get_safe_ip(self, hostname: str) -> str | None:
+    def _get_safe_ips(self, hostname: str) -> list[str] | None:
         """
-        Resolves hostname and returns a safe IP only if ALL resolved addresses are global.
+        Resolves hostname and returns its IPs only if ALL resolved addresses are global.
         Enterprise-grade protection against SSRF, CGNAT, and DNS rebinding.
         """
         try:
@@ -193,8 +201,8 @@ class PluginLoader:
                     logger.warning("[AXG] Blocked CGNAT IP for %s: %s", hostname, ip)
                     return None
 
-            # Return the first safe IP for pinning (sorted for determinism)
-            return ips[0]
+            # Every address is safe: return all of them (sorted) so callers can fall back
+            return ips
         except Exception:  # noqa: BLE001
             logger.exception("[AXG] DNS resolution/validation failed for %s", hostname)
             return None

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import anyio
 
+from axg.audit import verify_audit_chain
 from axg.engine import DecisionEngine
 from axg.models import DecisionRequest
 from axg.plugin_loader import PluginLoadError, PluginLoader
@@ -25,6 +26,9 @@ def get_parser() -> argparse.ArgumentParser:
     simulate_parser.add_argument("--payload", required=True, help="Path to the request payload JSON file")
     simulate_parser.add_argument("--dir", default=".", help="Base directory containing the plugins folder")
     simulate_parser.add_argument("--shadow-mode", action="store_true", help="Run simulation in shadow mode")
+
+    audit_parser = subparsers.add_parser("verify-audit", help="Verifies the hash chain of a JSONL audit file")
+    audit_parser.add_argument("--file", required=True, help="Path to the AXG_AUDIT_FILE log")
 
     return parser
 
@@ -92,6 +96,19 @@ async def cmd_simulate_decision(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_verify_audit(args: argparse.Namespace) -> int:
+    try:
+        ok, line = verify_audit_chain(args.file)
+    except OSError as e:
+        print(f"Cannot read audit file: {e}", file=sys.stderr)
+        return 1
+    if ok:
+        print(f"Audit chain INTACT: {args.file}")
+        return 0
+    print(f"Audit chain BROKEN at line {line}: {args.file}", file=sys.stderr)
+    return 2
+
+
 async def async_main() -> None:
     parser = get_parser()
     args = parser.parse_args()
@@ -100,6 +117,8 @@ async def async_main() -> None:
         sys.exit(await cmd_validate_plugin(args))
     elif args.command == "simulate-decision":
         sys.exit(await cmd_simulate_decision(args))
+    elif args.command == "verify-audit":
+        sys.exit(cmd_verify_audit(args))
 
 
 def main() -> None:
