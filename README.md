@@ -8,7 +8,7 @@ Deterministic execution control for AI agent actions in real systems.
 
 AXG sits between probabilistic AI interpretation and deterministic system writes. It evaluates risk, uncertainty, and policy constraints before any action is allowed to execute.
 
-## Status: Beta (v0.2)
+## Status: Beta (v0.2.1)
 
 AXG is in production as the decision layer of the MUAI ecosystem. v0.2 adds authenticated callers and Passport v2. The API may still change before 1.0. Read [Security Model](#security-model) before exposing AXG outside a private network.
 
@@ -127,7 +127,10 @@ A Passport is only as trustworthy as the caller that asked for it, so:
 - Without `AXG_PRIVATE_KEY`, AXG refuses to start when `AXG_ENV=production`; elsewhere it uses ephemeral development keys.
 - Remote plugins are off by default. When enabled, they load only from `AXG_REMOTE_PLUGIN_ALLOWLIST` entries. Each entry is parsed and must match exactly on scheme, host and port. A path in the entry scopes it on a segment boundary, and dot segments are rejected.
 
-Report vulnerabilities privately through GitHub Security Advisories on this repository, not in public issues.
+- Request bodies are capped (`AXG_MAX_BODY_BYTES`) and decisions are rate-limited per caller (`AXG_RATE_LIMIT_PER_MINUTE`).
+- The JSONL audit log is hash-chained: `axg verify-audit --file <path>` detects edited, deleted or reordered records.
+
+Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). Do not use public issues.
 
 ### Configuration
 
@@ -140,7 +143,9 @@ Report vulnerabilities privately through GitHub Security Advisories on this repo
 | `AXG_PREVIOUS_PUBLIC_KEYS` | JSON list of retired public keys still published in the JWKS during rotation |
 | `AXG_ADMIN_TOKEN` | Enables `POST /v1/plugins/reload` |
 | `ENABLE_REMOTE_PLUGINS`, `AXG_REMOTE_PLUGIN_ALLOWLIST` | Opt-in remote policies; comma-separated allowed origins, optionally with a path (`https://policies.example.com/axg/`) |
-| `AXG_AUDIT_FILE`, `AXG_AUDIT_WEBHOOK`, `AXG_AUDIT_WEBHOOK_TOKEN` | Audit sinks |
+| `AXG_AUDIT_FILE`, `AXG_AUDIT_WEBHOOK`, `AXG_AUDIT_WEBHOOK_TOKEN` | Audit sinks (file is hash-chained; webhook retries 3 times) |
+| `AXG_MAX_BODY_BYTES` | Maximum request body (default 262144) |
+| `AXG_RATE_LIMIT_PER_MINUTE` | Decisions per caller per minute, per process (default 600, `0` disables) |
 
 Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <key>`.
 
@@ -247,6 +252,9 @@ axg validate-plugin --id finnorte --dir plugins
 
 # Simulate a decision
 axg simulate-decision --plugin finnorte --payload ./examples/request.json --dir plugins
+
+# Verify the audit log hash chain
+axg verify-audit --file /var/log/axg/audit.jsonl
 ```
 
 ## Project Structure

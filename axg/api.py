@@ -11,15 +11,17 @@ from axg.engine import DecisionEngine
 from axg.models import DecisionRequest, DecisionResponse
 from axg.audit import audit_manager
 from axg.crypto import get_public_key, get_jwks, key_manager
+from axg.limits import BodySizeLimitMiddleware, rate_limiter
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(
     title="AXG - Agent Execution Guard",
-    version="0.2.0",
+    version="0.2.1",
     description="Deterministic execution control plane for AI agent actions.",
 )
+app.add_middleware(BodySizeLimitMiddleware)
 
 engine = DecisionEngine()
 
@@ -74,6 +76,9 @@ async def create_decision(
     """Core endpoint to evaluate agent actions against security policies."""
     if not caller.may_act_for(request.app_id):
         raise HTTPException(status_code=403, detail="Caller is not allowed to request decisions for this app")
+    retry_after = rate_limiter.check(caller.client_id)
+    if retry_after is not None:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded", headers={"Retry-After": str(retry_after)})
 
     logger.info(
         json.dumps(

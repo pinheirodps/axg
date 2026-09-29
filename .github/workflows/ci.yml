@@ -9,61 +9,70 @@ on:
 permissions:
   contents: read
 
+# Third-party actions are pinned by commit SHA (tag in the comment); Dependabot keeps them current.
 jobs:
   test-core:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.11'
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install .[test]
-        pip install pytest pytest-asyncio pytest-cov httpx
+        pip install pytest pytest-asyncio pytest-cov httpx pip-audit
+    - name: Audit dependencies
+      run: pip-audit --progress-spinner off
     - name: Run Core Tests
       run: |
         python -m pytest --cov=axg --cov-report=xml --cov-fail-under=98
     - name: Upload Core coverage
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
       with:
-        file: ./coverage.xml
+        files: ./coverage.xml
         flags: core
 
   test-node-sdk:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/axg-node-sdk
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Set up Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '20'
+        cache: npm
+        cache-dependency-path: sdks/axg-node-sdk/package-lock.json
     - name: Install dependencies
-      run: |
-        cd sdks/axg-node-sdk
-        npm install
+      run: npm ci
+    - name: Audit dependencies
+      run: npm audit --audit-level=high
     - name: Build and Test
       run: |
-        cd sdks/axg-node-sdk
         npm run build
         npm test
 
   test-python-sdk:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdks/axg-python-sdk
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: '3.11'
     - name: Install SDK dependencies
       run: |
-        cd sdks/axg-python-sdk
         pip install .
-        pip install pytest pytest-asyncio
+        pip install pytest pytest-asyncio pip-audit
+    - name: Audit dependencies
+      run: pip-audit --progress-spinner off
     - name: Run Python SDK Tests
-      run: |
-        cd sdks/axg-python-sdk
-        pytest
+      run: pytest
