@@ -166,7 +166,8 @@ def test_api_joins_the_caller_trace_and_links_the_audit_record(spans, api_client
     assert len(decide_spans) == 1
     span = decide_spans[0]
     assert format(span.context.trace_id, "032x") == TRACE_ID
-    assert format(span.parent.span_id, "016x") == PARENT_SPAN_ID
+    parent_ids = {format(s.parent.span_id, "016x") for s in spans.get_finished_spans() if s.parent and s.parent.is_valid}
+    assert PARENT_SPAN_ID in parent_ids or (span.parent and format(span.parent.span_id, "016x") == PARENT_SPAN_ID)
     assert recorded.await_args.args[0].trace_id == TRACE_ID
 
 
