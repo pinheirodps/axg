@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "ActionPolicy": {
+      "properties": {
+        "base_risk": {
+          "default": 0.25,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Base Risk",
+          "type": "number"
+        },
+        "required_permissions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Permissions",
+          "type": "array"
+        }
+      },
+      "title": "ActionPolicy",
+      "type": "object"
+    },
+    "ConditionGroup": {
+      "properties": {
+        "all": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RuleCondition"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "All"
+        },
+        "any": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/RuleCondition"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Any"
+        }
+      },
+      "title": "ConditionGroup",
+      "type": "object"
+    },
+    "Decision": {
+      "enum": [
+        "ALLOW",
+        "SUGGEST",
+        "CONFIRM",
+        "BLOCK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "PolicyRule": {
+      "properties": {
+        "actionable_payload": {
+          "additionalProperties": true,
+          "title": "Actionable Payload",
+          "type": "object"
+        },
+        "audit_flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Audit Flags",
+          "type": "array"
+        },
+        "condition": {
+          "$ref": "#/$defs/ConditionGroup"
+        },
+        "confidence_penalty": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence Penalty",
+          "type": "number"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "risk_delta": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Risk Delta",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "condition",
+        "decision",
+        "reason"
+      ],
+      "title": "PolicyRule",
+      "type": "object"
+    },
+    "RuleCondition": {
+      "properties": {
+        "field": {
+          "description": "Dotted path into the request, e.g. payload.amount or agent.id",
+          "title": "Field",
+          "type": "string"
+        },
+        "operator": {
+          "enum": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "in",
+            "not_in",
+            "exists",
+            "contains"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "field",
+        "operator"
+      ],
+      "title": "RuleCondition",
+      "type": "object"
+    },
+    "Thresholds": {
+      "properties": {
+        "allow_min_confidence": {
+          "default": 0.85,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Allow Min Confidence",
+          "type": "number"
+        },
+        "high_risk_threshold": {
+          "default": 0.7,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "High Risk Threshold",
+          "type": "number"
+        },
+        "suggest_min_confidence": {
+          "default": 0.65,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Suggest Min Confidence",
+          "type": "number"
+        }
+      },
+      "title": "Thresholds",
+      "type": "object"
+    },
+    "UncertaintyGate": {
+      "description": "Writes that must be confirmed when the intent behind them is uncertain.\n\nDomain-specific by design: each plugin lists its own sensitive actions. Without actions,\nthe gate never triggers (the engine itself knows no domain).",
+      "properties": {
+        "actions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "audit_flag": {
+          "default": "write_requires_confirmation",
+          "title": "Audit Flag",
+          "type": "string"
+        },
+        "reason": {
+          "default": "Intent could not be confidently identified. This action changes data, so confirmation is required before execution.",
+          "title": "Reason",
+          "type": "string"
+        },
+        "threshold": {
+          "default": 0.7,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Threshold",
+          "type": "number"
+        },
+        "uncertain_source_suffixes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertain Source Suffixes",
+          "type": "array"
+        },
+        "uncertain_sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertain Sources",
+          "type": "array"
+        }
+      },
+      "title": "UncertaintyGate",
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/plugin_manifest.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ActionPolicy"
+      },
+      "title": "Actions",
+      "type": "object"
+    },
+    "domain": {
+      "title": "Domain",
+      "type": "string"
+    },
+    "plugin": {
+      "title": "Plugin",
+      "type": "string"
+    },
+    "rules": {
+      "items": {
+        "$ref": "#/$defs/PolicyRule"
+      },
+      "title": "Rules",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "axg.plugin_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "thresholds": {
+      "$ref": "#/$defs/Thresholds"
+    },
+    "uncertainty_gate": {
+      "$ref": "#/$defs/UncertaintyGate"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "plugin",
+    "version",
+    "domain"
+  ],
+  "title": "Plugin",
+  "type": "object"
+}

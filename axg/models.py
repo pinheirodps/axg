@@ -92,45 +92,57 @@ class DecisionResponse(BaseModel):
 
 
 class ExecutionRecord(BaseModel):
-    schema_version: str = "execution_record.v1"
+    """Audit record of one decision, written by the audit sinks.
+
+    Framework-neutral: it describes the proposal (whatever agent or orchestrator produced it),
+    the decision and the execution state, with no assumption about the caller.
+    """
+
+    schema_version: Literal["axg.execution_record.v2"] = "axg.execution_record.v2"
     execution_id: str
     tenant_id: str
     app_id: str
+    plugin_id: str
     source: str
-    requested_by: str | None = None
-    input_hash: str | None = None
+    requested_by: str | None = Field(default=None, description="user_id, or the agent id when there is no user")
+    agent_id: str | None = None
+    input_hash: str | None = Field(default=None, description="SHA-256 of the canonical request payload")
 
-    # MUAI Insights
-    muai_schema_version: str = "muai.intent.v1"
-    muai_action_type: str | None = None
-    muai_confidence: float = 0.0
-    fallback_used: bool = False
+    # The proposal under evaluation
+    action_type: str
+    proposal_model: str | None = Field(default=None, description="Model that proposed the action, if reported")
+    proposal_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    intent_fallback_used: bool = False
 
-    # AXG Governance
-    axg_decision: str | None = None
-    risk_level: str = "low"
+    # The decision
+    decision: Decision
+    policy: str = Field(description="plugin@version that produced the decision")
+    risk_score: float = Field(ge=0.0, le=1.0)
+    risk_level: str
     rules_triggered: list[str] = Field(default_factory=list)
     audit_flags: list[str] = Field(default_factory=list)
-    passport_id: str | None = None
+    passport_id: str | None = Field(default=None, description="Passport jti; the token itself is never stored")
     human_confirmation_required: bool = False
     shadow_mode: bool = False
 
-    # Final Result
+    # The execution, as reported back by the caller
     execution_status: ExecutionStatus = ExecutionStatus.PENDING
     execution_result: Any = None
     error: str | None = None
-    created_at: str | None = None
+    created_at: str = Field(description="ISO 8601 UTC time of the decision")
     metadata: dict[str, Any] = Field(default_factory=dict)
     trace_id: str | None = Field(
         default=None, description="W3C trace id of the decision, linking this record to its OpenTelemetry trace"
     )
 
-    model_config = ConfigDict(populate_by_name=True)
+
+RuleOperator = Literal["eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "exists", "contains"]
 
 
 class RuleCondition(BaseModel):
-    field: str
-    operator: str
+    field: str = Field(description="Dotted path into the request, e.g. payload.amount or agent.id")
+    # A typo must fail plugin validation: an operator that silently never matches would disable its rule
+    operator: RuleOperator
     value: Any | None = None
 
 

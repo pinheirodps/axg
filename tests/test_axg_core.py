@@ -7,6 +7,7 @@ from unittest.mock import patch, PropertyMock
 import pytest
 import respx
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from axg.api import app
 from axg.engine import DecisionEngine
@@ -321,8 +322,9 @@ def test_rule_engine_any_all_missing_invalid_and_contains_list():
         RuleCondition(field="payload.amount", operator="contains", value="uber"),
         {"payload": {"amount": 15}},
     )
+    # Validation rejects unknown operators; the engine still refuses them if one slips through
     assert not engine.evaluate_condition(
-        RuleCondition(field="payload.amount", operator="eval", value="unsafe"),
+        RuleCondition.model_construct(field="payload.amount", operator="eval", value="unsafe"),
         {"payload": {"amount": 15}},
     )
     assert engine.evaluate_condition(
@@ -331,9 +333,15 @@ def test_rule_engine_any_all_missing_invalid_and_contains_list():
     )
     engine.supported_operators = {*RuleEngine.supported_operators, "future"}
     assert not engine.evaluate_condition(
-        RuleCondition(field="payload.amount", operator="future", value=15),
+        RuleCondition.model_construct(field="payload.amount", operator="future", value=15),
         {"payload": {"amount": 15}},
     )
+
+
+def test_unknown_operator_fails_plugin_validation():
+    """A typo must not silently disable a rule (it would never match)."""
+    with pytest.raises(ValidationError):
+        RuleCondition(field="payload.command", operator="contain", value="rm -rf")
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,8 @@
 
 Regenerate after changing a contract model:  python -m axg.schemas
 Verify the committed files are current:      python -m axg.schemas --check
+
+Superseded versions (e.g. execution_record.v1) stay in schemas/ unchanged, for existing consumers.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from axg.models import DecisionRequest, DecisionResponse, ExecutionRecord, PassportClaimsV2
+from axg.models import DecisionRequest, DecisionResponse, ExecutionRecord, PassportClaimsV2, Plugin
 
 SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"
 BASE_ID = "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas"
@@ -20,8 +22,9 @@ BASE_ID = "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas"
 CONTRACTS: dict[str, type[BaseModel]] = {
     "decision_request.v1": DecisionRequest,
     "decision_response.v1": DecisionResponse,
-    "execution_record.v1": ExecutionRecord,
+    "execution_record.v2": ExecutionRecord,
     "passport_claims.v2": PassportClaimsV2,
+    "plugin_manifest.v1": Plugin,
 }
 
 
