@@ -1,0 +1,92 @@
+{
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/passport_claims.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Claims of an AXG Passport v2 (RS256 JWT, header ``kid`` = RFC 7638 thumbprint).\n\nSingle source for the tokens issued by ``axg.crypto.sign_decision`` and for the published\nschema ``schemas/passport_claims.v2.schema.json``.",
+  "properties": {
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "aud": {
+      "description": "app_id the action is authorized for",
+      "title": "Aud",
+      "type": "string"
+    },
+    "azp": {
+      "description": "client_id of the authenticated caller that requested the decision",
+      "title": "Azp",
+      "type": "string"
+    },
+    "decision": {
+      "const": "ALLOW",
+      "default": "ALLOW",
+      "title": "Decision",
+      "type": "string"
+    },
+    "exp": {
+      "title": "Exp",
+      "type": "integer"
+    },
+    "iat": {
+      "title": "Iat",
+      "type": "integer"
+    },
+    "iss": {
+      "const": "axg-engine",
+      "default": "axg-engine",
+      "title": "Iss",
+      "type": "string"
+    },
+    "jti": {
+      "description": "unique id; verifiers enforce single use",
+      "title": "Jti",
+      "type": "string"
+    },
+    "nbf": {
+      "title": "Nbf",
+      "type": "integer"
+    },
+    "payload_hash": {
+      "description": "SHA-256 of the canonical actionable_payload",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Payload Hash",
+      "type": "string"
+    },
+    "policy": {
+      "description": "plugin@version that produced the decision",
+      "title": "Policy",
+      "type": "string"
+    },
+    "sub": {
+      "description": "execution_id",
+      "title": "Sub",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "ver": {
+      "const": 2,
+      "default": 2,
+      "title": "Ver",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "sub",
+    "aud",
+    "azp",
+    "iat",
+    "nbf",
+    "exp",
+    "jti",
+    "tenant_id",
+    "action_type",
+    "policy",
+    "payload_hash"
+  ],
+  "title": "PassportClaimsV2",
+  "type": "object"
+}

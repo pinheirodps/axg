@@ -1,0 +1,153 @@
+{
+  "$defs": {
+    "AgentIdentity": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "permissions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Permissions",
+          "type": "array"
+        },
+        "type": {
+          "default": "agent",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "AgentIdentity",
+      "type": "object"
+    },
+    "LlmSignal": {
+      "properties": {
+        "confidence": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "raw_output": {
+          "additionalProperties": true,
+          "title": "Raw Output",
+          "type": "object"
+        }
+      },
+      "title": "LlmSignal",
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/decision_request.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "agent": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentIdentity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "app_id": {
+      "title": "App Id",
+      "type": "string"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "intent": {
+      "additionalProperties": true,
+      "title": "Intent",
+      "type": "object"
+    },
+    "llm": {
+      "$ref": "#/$defs/LlmSignal"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "plugin_id": {
+      "title": "Plugin Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "axg.decision_request.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shadow_mode": {
+      "default": false,
+      "title": "Shadow Mode",
+      "type": "boolean"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "user_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Id"
+    }
+  },
+  "required": [
+    "execution_id",
+    "tenant_id",
+    "app_id",
+    "plugin_id",
+    "source",
+    "action_type"
+  ],
+  "title": "DecisionRequest",
+  "type": "object"
+}

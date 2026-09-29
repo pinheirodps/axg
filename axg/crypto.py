@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from axg.canonical import canonical_hash
+from axg.models import PassportClaimsV2
 
 logger = logging.getLogger(__name__)
 
@@ -182,22 +183,22 @@ def sign_decision(
     now = datetime.now(timezone.utc)
     jti = str(uuid.uuid4())
 
-    claims = {
-        "iss": ISSUER,
-        "sub": execution_id,
-        "aud": app_id,
-        "azp": client_id,
-        "iat": int(now.timestamp()),
-        "nbf": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=expires_in_minutes)).timestamp()),
-        "jti": jti,
-        "ver": PASSPORT_VERSION,
-        "tenant_id": tenant_id,
-        "decision": decision,
-        "action_type": action_type,
-        "policy": policy,
-        "payload_hash": hash_payload(actionable_payload),
-    }
+    claims = PassportClaimsV2(
+        iss=ISSUER,
+        sub=execution_id,
+        aud=app_id,
+        azp=client_id,
+        iat=int(now.timestamp()),
+        nbf=int(now.timestamp()),
+        exp=int((now + timedelta(minutes=expires_in_minutes)).timestamp()),
+        jti=jti,
+        ver=PASSPORT_VERSION,
+        tenant_id=tenant_id,
+        decision=decision,
+        action_type=action_type,
+        policy=policy,
+        payload_hash=hash_payload(actionable_payload),
+    ).model_dump()
 
     try:
         token = jwt.encode(

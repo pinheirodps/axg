@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "Decision": {
+      "enum": [
+        "ALLOW",
+        "SUGGEST",
+        "CONFIRM",
+        "BLOCK"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "DecisionScores": {
+      "properties": {
+        "final_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Final Confidence",
+          "type": "number"
+        },
+        "llm_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Llm Confidence",
+          "type": "number"
+        },
+        "risk_level": {
+          "default": "low",
+          "title": "Risk Level",
+          "type": "string"
+        },
+        "risk_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Risk Score",
+          "type": "number"
+        },
+        "uncertainty_score": {
+          "default": 0.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Uncertainty Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "llm_confidence",
+        "final_confidence",
+        "risk_score"
+      ],
+      "title": "DecisionScores",
+      "type": "object"
+    },
+    "TriggeredRule": {
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "decision",
+        "reason"
+      ],
+      "title": "TriggeredRule",
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/decision_response.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actionable_payload": {
+      "additionalProperties": true,
+      "title": "Actionable Payload",
+      "type": "object"
+    },
+    "audit_flags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Audit Flags",
+      "type": "array"
+    },
+    "audit_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Audit Id"
+    },
+    "decision": {
+      "$ref": "#/$defs/Decision"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "passport": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Passport"
+    },
+    "passport_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Passport Id"
+    },
+    "plugin_version": {
+      "title": "Plugin Version",
+      "type": "string"
+    },
+    "reason": {
+      "title": "Reason",
+      "type": "string"
+    },
+    "rules_triggered": {
+      "items": {
+        "$ref": "#/$defs/TriggeredRule"
+      },
+      "title": "Rules Triggered",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "axg.decision_response.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scores": {
+      "$ref": "#/$defs/DecisionScores"
+    },
+    "shadow_mode": {
+      "default": false,
+      "title": "Shadow Mode",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "execution_id",
+    "plugin_version",
+    "decision",
+    "scores",
+    "reason"
+  ],
+  "title": "DecisionResponse",
+  "type": "object"
+}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum, StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -198,3 +198,28 @@ class Plugin(BaseModel):
     @property
     def version_label(self) -> str:
         return f"{self.plugin}@{self.version}"
+
+
+class PassportClaimsV2(BaseModel):
+    """Claims of an AXG Passport v2 (RS256 JWT, header ``kid`` = RFC 7638 thumbprint).
+
+    Single source for the tokens issued by ``axg.crypto.sign_decision`` and for the published
+    schema ``schemas/passport_claims.v2.schema.json``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    iss: Literal["axg-engine"] = "axg-engine"
+    sub: str = Field(description="execution_id")
+    aud: str = Field(description="app_id the action is authorized for")
+    azp: str = Field(description="client_id of the authenticated caller that requested the decision")
+    iat: int
+    nbf: int
+    exp: int
+    jti: str = Field(description="unique id; verifiers enforce single use")
+    ver: Literal[2] = 2
+    tenant_id: str
+    decision: Literal["ALLOW"] = "ALLOW"
+    action_type: str
+    policy: str = Field(description="plugin@version that produced the decision")
+    payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$", description="SHA-256 of the canonical actionable_payload")

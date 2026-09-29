@@ -1,0 +1,188 @@
+{
+  "$defs": {
+    "ExecutionStatus": {
+      "enum": [
+        "pending",
+        "running",
+        "completed",
+        "failed"
+      ],
+      "title": "ExecutionStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/execution_record.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "app_id": {
+      "title": "App Id",
+      "type": "string"
+    },
+    "audit_flags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Audit Flags",
+      "type": "array"
+    },
+    "axg_decision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Axg Decision"
+    },
+    "created_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "execution_result": {
+      "default": null,
+      "title": "Execution Result"
+    },
+    "execution_status": {
+      "$ref": "#/$defs/ExecutionStatus",
+      "default": "pending"
+    },
+    "fallback_used": {
+      "default": false,
+      "title": "Fallback Used",
+      "type": "boolean"
+    },
+    "human_confirmation_required": {
+      "default": false,
+      "title": "Human Confirmation Required",
+      "type": "boolean"
+    },
+    "input_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input Hash"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "muai_action_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Muai Action Type"
+    },
+    "muai_confidence": {
+      "default": 0.0,
+      "title": "Muai Confidence",
+      "type": "number"
+    },
+    "muai_schema_version": {
+      "default": "muai.intent.v1",
+      "title": "Muai Schema Version",
+      "type": "string"
+    },
+    "passport_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Passport Id"
+    },
+    "requested_by": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested By"
+    },
+    "risk_level": {
+      "default": "low",
+      "title": "Risk Level",
+      "type": "string"
+    },
+    "rules_triggered": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rules Triggered",
+      "type": "array"
+    },
+    "schema_version": {
+      "default": "execution_record.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shadow_mode": {
+      "default": false,
+      "title": "Shadow Mode",
+      "type": "boolean"
+    },
+    "source": {
+      "title": "Source",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "execution_id",
+    "tenant_id",
+    "app_id",
+    "source"
+  ],
+  "title": "ExecutionRecord",
+  "type": "object"
+}
