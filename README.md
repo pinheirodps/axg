@@ -242,6 +242,21 @@ Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sh
 
 Plugins are JSON-only policies. Path: `plugins/<plugin_id>/rules.json`
 
+The engine is domain-agnostic: everything specific to a vertical lives in its plugin. Actions with the most at stake declare an **uncertainty gate**. When the intent behind one of these writes is uncertain (for example, the LLM fell back, or the request came from a bot channel), the decision is forced to `CONFIRM`:
+
+```json
+"uncertainty_gate": {
+  "actions": ["create_expense", "create_income"],
+  "uncertain_sources": ["whatsapp_bot", "telegram_bot", "chat"],
+  "uncertain_source_suffixes": ["_bot"],
+  "threshold": 0.7,
+  "audit_flag": "financial_write_requires_confirmation",
+  "reason": "Intent could not be confidently identified..."
+}
+```
+
+Plugins without a gate never force a confirmation for uncertainty. Their rules, permissions and thresholds still apply.
+
 ## CLI
 
 AXG ships with a CLI for local validation and simulation.

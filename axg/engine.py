@@ -23,19 +23,6 @@ from axg.crypto import sign_decision, hash_payload
 
 logger = logging.getLogger(__name__)
 
-FINANCIAL_WRITE_ACTIONS = {
-    "add_expense",
-    "add_income",
-    "create_transaction",
-    "categorize_transaction",
-    "detect_subscription",
-    "create_expense",
-    "create_income",
-}
-
-UNCERTAIN_SOURCES = {"whatsapp_bot", "telegram_bot", "chat"}
-
-
 DEFAULT_PENALTY = {
     Decision.ALLOW: 0.0,
     Decision.SUGGEST: 0.1,
@@ -66,9 +53,9 @@ class DecisionEngine:
         triggered_rules = self.rules.evaluate_rules(plugin.rules, request.model_dump())
         scores = self._scores(plugin, request, triggered_rules)
         decision = self._final_decision(plugin, request, triggered_rules, scores, caller)
-        audit_flags = self._audit_flags(triggered_rules, request, scores)
+        audit_flags = self._audit_flags(plugin, triggered_rules, request, scores)
         actionable_payload = self._actionable_payload(request, triggered_rules)
-        reason = self._reason(decision, triggered_rules, request, scores)
+        reason = self._reason(plugin, decision, triggered_rules, request, scores)
 
         if decision == Decision.ALLOW and not caller.authenticated:
             decision = Decision.CONFIRM
@@ -123,7 +110,7 @@ class DecisionEngine:
         scores: DecisionScores,
         caller: Caller = TRUSTED_LOCAL,
     ) -> Decision:
-        if self._requires_uncertainty_confirmation(request, scores):
+        if self._requires_uncertainty_confirmation(plugin, request, scores):
             return Decision.CONFIRM
 
         permission_decision = self._permission_decision(plugin, request, caller)
@@ -188,7 +175,7 @@ class DecisionEngine:
             final_confidence=self._clamp(request.llm.confidence - confidence_penalty),
             risk_score=risk_score,
             risk_level=risk_level,
-            uncertainty_score=self._uncertainty_score(request),
+            uncertainty_score=self._uncertainty_score(plugin, request),
         )
 
     def _actionable_payload(
@@ -207,16 +194,14 @@ class DecisionEngine:
 
     def _reason(
         self,
+        plugin: Plugin,
         decision: Decision,
         triggered_rules: list[PolicyRule],
         request: DecisionRequest,
         scores: DecisionScores,
     ) -> str:
-        if self._requires_uncertainty_confirmation(request, scores):
-            return (
-                "Intent could not be confidently identified. Because this is a "
-                "financial write operation, confirmation is required before saving."
-            )
+        if self._requires_uncertainty_confirmation(plugin, request, scores):
+            return plugin.uncertainty_gate.reason
         if triggered_rules:
             # Sort by precedence to show most critical reason first
             sorted_rules = sorted(triggered_rules, key=lambda r: DECISION_PRECEDENCE[r.decision], reverse=True)
@@ -231,6 +216,7 @@ class DecisionEngine:
 
     def _audit_flags(
         self,
+        plugin: Plugin,
         triggered_rules: list[PolicyRule],
         request: DecisionRequest,
         scores: DecisionScores,
@@ -243,8 +229,8 @@ class DecisionEngine:
             flags.append("unknown_intent")
         if intent.get("fallback_used") is True:
             flags.append("fallback_used")
-        if self._is_financial_write(request) and scores.uncertainty_score >= 0.7:
-            flags.append("financial_write_requires_confirmation")
+        if self._requires_uncertainty_confirmation(plugin, request, scores):
+            flags.append(plugin.uncertainty_gate.audit_flag)
         
         if request.shadow_mode:
             flags.append("shadow_mode_active")
@@ -346,35 +332,41 @@ class DecisionEngine:
     def _clamp(self, value: float) -> float:
         return max(0.0, min(1.0, round(value, 4)))
 
-    def _uncertainty_score(self, request: DecisionRequest) -> float:
+    def _uncertainty_score(self, plugin: Plugin, request: DecisionRequest) -> float:
         intent = request.intent or {}
         score = 0.0
         if intent.get("original") == "unknown":
             score += 0.8
         if intent.get("fallback_used") is True:
             score += 0.2
-        if self._is_uncertain_source(request.source):
+        if self._is_uncertain_source(plugin, request.source):
             score += 0.1
         if (
-            self._is_financial_write(request)
-            and self._is_uncertain_source(request.source)
+            self._is_gated_write(plugin, request)
+            and self._is_uncertain_source(plugin, request.source)
             and not intent
         ):
-            score = max(score, 0.7)
+            score = max(score, plugin.uncertainty_gate.threshold)
         return self._clamp(score)
 
-    def _is_uncertain_source(self, source: str) -> bool:
-        return source in UNCERTAIN_SOURCES or source.endswith("_bot")
+    def _is_uncertain_source(self, plugin: Plugin, source: str) -> bool:
+        gate = plugin.uncertainty_gate
+        return source in gate.uncertain_sources or source.endswith(tuple(gate.uncertain_source_suffixes))
 
-    def _is_financial_write(self, request: DecisionRequest) -> bool:
+    def _is_gated_write(self, plugin: Plugin, request: DecisionRequest) -> bool:
+        """The action (or the one the LLM proposed / resolved) is a write this plugin gates."""
+        gated = set(plugin.uncertainty_gate.actions)
         resolved_intent = (request.intent or {}).get("resolved")
         return (
-            request.action_type in FINANCIAL_WRITE_ACTIONS
-            or request.payload.get("proposed_action") in FINANCIAL_WRITE_ACTIONS
-            or resolved_intent in FINANCIAL_WRITE_ACTIONS
+            request.action_type in gated
+            or request.payload.get("proposed_action") in gated
+            or resolved_intent in gated
         )
 
     def _requires_uncertainty_confirmation(
-        self, request: DecisionRequest, scores: DecisionScores
+        self, plugin: Plugin, request: DecisionRequest, scores: DecisionScores
     ) -> bool:
-        return self._is_financial_write(request) and scores.uncertainty_score >= 0.7
+        return (
+            self._is_gated_write(plugin, request)
+            and scores.uncertainty_score >= plugin.uncertainty_gate.threshold
+        )
