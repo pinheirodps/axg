@@ -20,6 +20,7 @@ from axg.auth import TRUSTED_LOCAL, Caller
 from axg.plugin_loader import PluginLoader, PluginLoadError
 from axg.rules import RuleEngine
 from axg.crypto import sign_decision, hash_payload
+from axg.telemetry import current_trace_id, observe_decision
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,15 @@ class DecisionEngine:
 
         ``caller`` defaults to the in-process host (library mode). The API passes the
         authenticated client, or ANONYMOUS, which can never obtain ALLOW nor a Passport.
+        Each evaluation is traced as an ``axg.decide`` span with decision metrics (no-op
+        unless the host installs an OpenTelemetry SDK).
         """
+        with observe_decision(request, caller) as observation:
+            response = await self._evaluate(request, caller)
+            observation.record(response)
+            return response
+
+    async def _evaluate(self, request: DecisionRequest, caller: Caller) -> DecisionResponse:
         try:
             plugin = await self.loader.load(request.plugin_id)
         except PluginLoadError as exc:
@@ -297,6 +306,7 @@ class DecisionEngine:
             execution_status=ExecutionStatus.PENDING,
             shadow_mode=request.shadow_mode,
             metadata=response.metadata,
+            trace_id=current_trace_id(),
         )
 
     def get_decision_log(

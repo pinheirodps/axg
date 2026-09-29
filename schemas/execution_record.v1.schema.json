@@ -175,6 +175,19 @@
     "tenant_id": {
       "title": "Tenant Id",
       "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "W3C trace id of the decision, linking this record to its OpenTelemetry trace",
+      "title": "Trace Id"
     }
   },
   "required": [

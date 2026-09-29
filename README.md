@@ -61,6 +61,7 @@ AXG is **not**:
 - **Payload Integrity**: The whole actionable payload is bound to the Passport by a canonical (RFC 8785-style) SHA-256 hash, identical in Python and Node.
 - **Public Verification**: Exposes public keys through `/.well-known/jwks.json` (key rotation supported) and `/v1/certs`.
 - **Audit Sinks**: Structured logging, file (`JSONL`), and webhook audit sinks.
+- **OpenTelemetry**: One span per decision (joined to the caller's W3C trace), rule events and decision metrics, exported over OTLP. See [Observability](#observability-opentelemetry).
 - **CLI**: Tool for plugin validation and local decision simulation.
 
 ## AXG Passport
@@ -117,6 +118,26 @@ Decision precedence:
 - `GET /v1/certs`: Current public key in PEM (legacy).
 - `POST /v1/plugins/reload`: Administrative plugin reload (requires `AXG_ADMIN_TOKEN`).
 
+## Observability (OpenTelemetry)
+
+Every decision is traced and measured with [OpenTelemetry](https://opentelemetry.io/), so AXG decisions show up next to your agent and LLM spans in any OTLP backend (Jaeger, Grafana Tempo, Honeycomb, Datadog, Azure Monitor, AWS X-Ray via ADOT...).
+
+- **Server:** set `OTEL_EXPORTER_OTLP_ENDPOINT` (for example `http://otel-collector:4318`). The image ships `axg[otel]` and exports traces and metrics over OTLP/HTTP. The standard `OTEL_*` variables apply (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SDK_DISABLED`...). If `opentelemetry-instrument` already installed a provider, AXG uses it.
+- **Library:** AXG depends only on `opentelemetry-api`. Without an SDK in the host it is a no-op; with one, `DecisionEngine.decide` spans join the host's current trace.
+- **Trace propagation:** callers send W3C `traceparent`, and the `axg.decide` span becomes a child of the caller's span. Each `ExecutionRecord` in the audit log carries the `trace_id`, so a record leads straight to its trace.
+- **Privacy:** telemetry carries decision metadata only. Payloads, actionable payloads, reasons, intents and Passports never leave AXG through spans or metrics.
+
+| Signal | Name | Content |
+|---|---|---|
+| Span | `axg.decide` | `axg.decision`, `axg.policy` (plugin@version), `axg.action.type`, `axg.plugin.id`, `axg.tenant.id`, `axg.app.id`, `axg.client.id`, `axg.execution.id`, `axg.source`, `axg.shadow_mode`, `axg.risk.score`, `axg.risk.level`, `axg.confidence.final`, `axg.uncertainty.score`, `axg.proposal.confidence`, `axg.proposal.model`, `axg.rules.triggered`, `axg.audit.flags`, `axg.passport.id` (jti), `gen_ai.agent.id` |
+| Span event | `axg.rule.triggered` | `axg.rule.id`, `axg.rule.decision`, once per matched rule |
+| Span status | `ERROR` | Only when the policy could not be evaluated (`plugin_load_failed`, `passport_signing_failed`) or an exception escaped. `BLOCK` and `CONFIRM` are correct outcomes, not errors |
+| Counter | `axg.decisions` | By `axg.decision`, `axg.plugin.id`, `axg.action.type`, `axg.client.id`, `axg.shadow_mode` |
+| Counter | `axg.rules.triggered` | By `axg.rule.id`, `axg.rule.decision`, `axg.plugin.id` |
+| Histogram | `axg.decision.duration` (s) | Same attributes as `axg.decisions`, plus `error.type` on failures |
+
+Metric attributes are low-cardinality on purpose: tenant, execution and agent ids are on spans only.
+
 ## Security Model
 
 A Passport is only as trustworthy as the caller that asked for it, so:
@@ -146,6 +167,7 @@ Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). Do
 | `AXG_AUDIT_FILE`, `AXG_AUDIT_WEBHOOK`, `AXG_AUDIT_WEBHOOK_TOKEN` | Audit sinks (file is hash-chained; webhook retries 3 times) |
 | `AXG_MAX_BODY_BYTES` | Maximum request body (default 262144) |
 | `AXG_RATE_LIMIT_PER_MINUTE` | Decisions per caller per minute, per process (default 600, `0` disables) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Enables OpenTelemetry export over OTLP/HTTP (see [Observability](#observability-opentelemetry)) |
 
 Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <key>`.
 
