@@ -136,6 +136,58 @@ def verify_passport(
         ) from e
 
 
+PASSPORT_META_KEY = "io.axg/passport"
+PAYLOAD_META_KEY = "io.axg/actionable_payload"
+
+
+def verify_mcp_tool_call(
+    meta: Optional[Dict[str, Any]],
+    tool_name: str,
+    arguments: Dict[str, Any],
+    app_id: str,
+    tenant_id: Optional[str] = None,
+    public_key: Optional[str] = None,
+    jwks_url: Optional[str] = None,
+    replay_cache: Optional[ReplayCache] = None,
+    jwks_client: Optional[PyJWKClient] = None,
+    ignored_arguments: tuple = ("axg",),
+) -> Dict[str, Any]:
+    """
+    Verify, inside an MCP tool, that AXG authorized exactly this call.
+
+    The AXG gateway/interceptor puts the Passport and the authorized actionable payload in the
+    request ``params._meta``. The Passport must be valid for this tool (``action_type``) and payload,
+    and every argument the tool received must be identical in the authorized payload (rules may add
+    fields to the payload; they may never differ from the arguments).
+    """
+    meta = meta or {}
+    passport = meta.get(PASSPORT_META_KEY)
+    authorized = meta.get(PAYLOAD_META_KEY)
+    if not passport or not isinstance(authorized, dict):
+        raise AxgVerificationError("Tool call carries no AXG Passport.", "MISSING_PASSPORT")
+
+    claims = verify_passport(
+        passport,
+        authorized,
+        app_id,
+        tenant_id=tenant_id,
+        allowed_action_types=[tool_name],
+        public_key=public_key,
+        jwks_url=jwks_url,
+        replay_cache=replay_cache,
+        jwks_client=jwks_client,
+    )
+
+    for key, value in arguments.items():
+        if key in ignored_arguments:
+            continue
+        if key not in authorized or authorized[key] != value:
+            raise AxgVerificationError(
+                f"Argument '{key}' differs from what AXG authorized.", "ARGUMENTS_MISMATCH"
+            )
+    return claims
+
+
 class AxgClient:
     """
     Client for verifying AXG Passports in Python services.

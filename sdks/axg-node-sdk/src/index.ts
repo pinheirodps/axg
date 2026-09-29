@@ -159,6 +159,42 @@ export async function verifyPassport(
   }
 }
 
+export const PASSPORT_META_KEY = 'io.axg/passport';
+export const PAYLOAD_META_KEY = 'io.axg/actionable_payload';
+
+/**
+ * Verify, inside an MCP tool, that AXG authorized exactly this call.
+ *
+ * The AXG gateway/interceptor puts the Passport and the authorized actionable payload in the
+ * request `params._meta`. The Passport must be valid for this tool (`action_type`) and payload, and
+ * every argument the tool received must be identical in the authorized payload (rules may add fields
+ * to the payload; they may never differ from the arguments).
+ */
+export async function verifyMcpToolCall(
+  meta: Record<string, any> | undefined,
+  toolName: string,
+  args: Record<string, any>,
+  options: VerificationOptions,
+  jwksUrl?: string,
+  ignoredArguments: string[] = ['axg'],
+): Promise<AxgPassportClaims> {
+  const passport = meta?.[PASSPORT_META_KEY];
+  const authorized = meta?.[PAYLOAD_META_KEY];
+  if (!passport || !authorized || typeof authorized !== 'object') {
+    throw new AxgVerificationError('Tool call carries no AXG Passport.', 'MISSING_PASSPORT');
+  }
+
+  const claims = await verifyPassport(passport, authorized, { ...options, allowedActionTypes: [toolName] }, jwksUrl);
+
+  for (const [key, value] of Object.entries(args)) {
+    if (ignoredArguments.includes(key)) continue;
+    if (!(key in authorized) || stringify(authorized[key]) !== stringify(value)) {
+      throw new AxgVerificationError(`Argument '${key}' differs from what AXG authorized.`, 'ARGUMENTS_MISMATCH');
+    }
+  }
+  return claims;
+}
+
 export class AxgClient {
   private jwksUrl: string;
 
