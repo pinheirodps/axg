@@ -23,7 +23,8 @@ async def test_passport_cryptographic_validation_e2e():
         source="test_runner",
         action_type="create_expense",
         payload=payload,
-        llm={"confidence": 0.95}
+        llm={"confidence": 0.95},
+        agent={"id": "muai:muai_console:test", "type": "service", "permissions": ["expense:create"]},
     )
     
     # 2. Process decision to get the Passport (AWAITED)

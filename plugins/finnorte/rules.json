@@ -9,24 +9,31 @@
   },
   "actions": {
     "create_expense": {
+      "required_permissions": ["expense:create"],
       "base_risk": 0.45
     },
     "add_expense": {
+      "required_permissions": ["expense:create"],
       "base_risk": 0.45
     },
     "create_income": {
+      "required_permissions": ["income:create"],
       "base_risk": 0.35
     },
     "add_income": {
+      "required_permissions": ["income:create"],
       "base_risk": 0.35
     },
     "create_transaction": {
+      "required_permissions": ["transaction:create"],
       "base_risk": 0.4
     },
     "categorize_transaction": {
+      "required_permissions": ["transaction:categorize"],
       "base_risk": 0.25
     },
     "detect_subscription": {
+      "required_permissions": ["subscription:detect"],
       "base_risk": 0.5
     }
   },
