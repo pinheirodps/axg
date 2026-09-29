@@ -16,6 +16,7 @@ from axg.models import (
     PolicyRule,
     TriggeredRule,
 )
+from axg.auth import TRUSTED_LOCAL, Caller
 from axg.plugin_loader import PluginLoader, PluginLoadError
 from axg.rules import RuleEngine
 from axg.crypto import sign_decision, hash_payload
@@ -50,8 +51,12 @@ class DecisionEngine:
         self.loader = loader or PluginLoader()
         self.rules = rules or RuleEngine()
 
-    async def decide(self, request: DecisionRequest) -> DecisionResponse:
-        """Evaluates a decision request against the appropriate plugin policies asynchronously."""
+    async def decide(self, request: DecisionRequest, caller: Caller = TRUSTED_LOCAL) -> DecisionResponse:
+        """Evaluates a decision request against the plugin policies on behalf of ``caller``.
+
+        ``caller`` defaults to the in-process host (library mode). The API passes the
+        authenticated client, or ANONYMOUS, which can never obtain ALLOW nor a Passport.
+        """
         try:
             plugin = await self.loader.load(request.plugin_id)
         except PluginLoadError as exc:
@@ -60,39 +65,42 @@ class DecisionEngine:
 
         triggered_rules = self.rules.evaluate_rules(plugin.rules, request.model_dump())
         scores = self._scores(plugin, request, triggered_rules)
-        decision = self._final_decision(plugin, request, triggered_rules, scores)
+        decision = self._final_decision(plugin, request, triggered_rules, scores, caller)
         audit_flags = self._audit_flags(triggered_rules, request, scores)
         actionable_payload = self._actionable_payload(request, triggered_rules)
-        passport = None
-        token_signing_failed = False
-        try:
-            # Cryptographic signing is CPU-bound but fast, remains sync
-            passport = sign_decision(
-                execution_id=request.execution_id,
-                app_id=request.app_id,
-                decision=decision.value,
-                action_type=request.action_type,
-                actionable_payload=actionable_payload
-            )
-        except Exception as exc:
-            logger.error("AXG failed to generate passport: %s", str(exc))
-            passport = None
-            token_signing_failed = True
-            audit_flags.append("passport_signing_failed")
-            if DECISION_PRECEDENCE[decision] < DECISION_PRECEDENCE[Decision.CONFIRM]:
-                decision = Decision.CONFIRM
+        reason = self._reason(decision, triggered_rules, request, scores)
 
-        reason = (
-            "AXG could not issue a passport. Confirmation is required before execution."
-            if token_signing_failed and decision != Decision.BLOCK
-            else self._reason(decision, triggered_rules, request, scores)
-        )
+        if decision == Decision.ALLOW and not caller.authenticated:
+            decision = Decision.CONFIRM
+            audit_flags.append("unauthenticated_caller")
+            reason = "The caller is not authenticated. Confirmation is required before execution."
+
+        passport = passport_id = None
+        # A Passport authorizes execution: only for ALLOW, and never for shadow evaluations
+        if decision == Decision.ALLOW and not request.shadow_mode:
+            try:
+                passport, passport_id = sign_decision(
+                    execution_id=request.execution_id,
+                    app_id=request.app_id,
+                    tenant_id=request.tenant_id,
+                    decision=decision.value,
+                    action_type=request.action_type,
+                    actionable_payload=actionable_payload,
+                    client_id=caller.client_id,
+                    policy=plugin.version_label,
+                )
+            except Exception as exc:
+                logger.error("AXG failed to generate passport: %s", str(exc))
+                audit_flags.append("passport_signing_failed")
+                decision = Decision.CONFIRM
+                reason = "AXG could not issue a passport. Confirmation is required before execution."
 
         response = DecisionResponse(
             execution_id=request.execution_id,
             plugin_version=plugin.version_label,
             decision=decision,
             passport=passport,
+            passport_id=passport_id,
             scores=scores,
             actionable_payload=actionable_payload,
             reason=reason,
@@ -113,11 +121,12 @@ class DecisionEngine:
         request: DecisionRequest,
         triggered_rules: list[PolicyRule],
         scores: DecisionScores,
+        caller: Caller = TRUSTED_LOCAL,
     ) -> Decision:
         if self._requires_uncertainty_confirmation(request, scores):
             return Decision.CONFIRM
 
-        permission_decision = self._permission_decision(plugin, request)
+        permission_decision = self._permission_decision(plugin, request, caller)
         decisions = [rule.decision for rule in triggered_rules]
         if permission_decision:
             decisions.append(permission_decision)
@@ -133,15 +142,17 @@ class DecisionEngine:
         return Decision.CONFIRM
 
     def _permission_decision(
-        self, plugin: Plugin, request: DecisionRequest
+        self, plugin: Plugin, request: DecisionRequest, caller: Caller = TRUSTED_LOCAL
     ) -> Decision | None:
         policy = plugin.actions.get(request.action_type)
         if not policy:
             return None
+        # An agent holds only the permissions its authenticated caller is allowed to grant
+        granted = caller.effective_permissions(request.agent.permissions) if request.agent else []
         missing_permissions = [
             permission
             for permission in policy.required_permissions
-            if not request.agent or permission not in request.agent.permissions
+            if permission not in granted
         ]
         if missing_permissions:
             return Decision.BLOCK
@@ -185,21 +196,9 @@ class DecisionEngine:
         request: DecisionRequest,
         triggered_rules: list[PolicyRule],
     ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "proposed_action": request.payload.get(
-                "proposed_action", request.action_type
-            )
-        }
-        for key in (
-            "transaction_id",
-            "merchant",
-            "amount",
-            "currency",
-            "category",
-            "description",
-        ):
-            if key in request.payload:
-                payload[key] = request.payload[key]
+        # The whole payload is bound to the Passport hash: no field may change after the decision
+        payload: dict[str, Any] = dict(request.payload)
+        payload.setdefault("proposed_action", request.action_type)
         if "proposed_category" in request.payload:
             payload["suggested_category"] = request.payload["proposed_category"]
         for rule in triggered_rules:
@@ -305,7 +304,7 @@ class DecisionEngine:
             risk_level=response.scores.risk_level,
             rules_triggered=[rule.id for rule in response.rules_triggered],
             audit_flags=response.audit_flags,
-            passport_id=response.passport,
+            passport_id=response.passport_id,
             human_confirmation_required=response.decision == Decision.CONFIRM,
             
             # Initial state for execution

@@ -5,7 +5,8 @@ import logging
 import os
 import socket
 import ipaddress
-from urllib.parse import urlparse
+import re
+from urllib.parse import unquote, urlparse
 from pathlib import Path
 
 import httpx
@@ -16,8 +17,52 @@ from axg.models import Plugin
 
 logger = logging.getLogger(__name__)
 
+# Local plugin ids are folder names: no separators, no traversal
+_PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+
+
 class PluginLoadError(Exception):
     pass
+
+
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def _url_parts(url: str) -> tuple[str, str, int | None, str] | None:
+    """(scheme, host, port, path) normalized for comparison; None if the URL has no host or a bad port."""
+    try:
+        parsed = urlparse(url.strip())
+        scheme = parsed.scheme.lower()
+        port = parsed.port or _DEFAULT_PORTS.get(scheme)
+    except ValueError:
+        return None
+    if not parsed.hostname:
+        return None
+    return scheme, parsed.hostname.lower(), port, parsed.path or "/"
+
+
+def _is_allowlisted(plugin_url: str) -> bool:
+    """Remote policies may only come from operator-approved origins (and optional path prefixes).
+
+    Entries are parsed, never string-prefix matched: ``https://policies.example.com`` must not
+    admit ``https://policies.example.com.evil``. Scheme, host and port must be equal, and the path
+    must equal the entry path or sit below it on a segment boundary.
+    """
+    target = _url_parts(plugin_url)
+    if target is None:
+        return False
+    # Dot segments (plain or percent-encoded) could escape an allowlisted path on the server side
+    if any(segment in {".", ".."} for segment in unquote(target[3]).split("/")):
+        return False
+
+    for entry in os.environ.get("AXG_REMOTE_PLUGIN_ALLOWLIST", "").split(","):
+        allowed = _url_parts(entry) if entry.strip() else None
+        if allowed is None or allowed[:3] != target[:3]:
+            continue
+        base = allowed[3].rstrip("/")
+        if not base or target[3] == base or target[3].startswith(base + "/"):
+            return True
+    return False
 
 
 class PluginLoader:
@@ -40,6 +85,8 @@ class PluginLoader:
                     "Remote plugin loading is disabled for security. "
                     "Set ENABLE_REMOTE_PLUGINS=true to enable."
                 )
+            if not _is_allowlisted(plugin_id):
+                raise PluginLoadError("Remote plugin URL is not in AXG_REMOTE_PLUGIN_ALLOWLIST")
             plugin = await self._load_remote(plugin_id)
         else:
             plugin = await self._load_local(plugin_id)
@@ -53,6 +100,8 @@ class PluginLoader:
         self._cache.clear()
 
     async def _load_local(self, plugin_id: str) -> Plugin:
+        if not _PLUGIN_ID.fullmatch(plugin_id):
+            raise PluginLoadError(f"Invalid plugin id: {plugin_id!r}")
         plugin_path = self.plugins_dir / plugin_id / "rules.json"
         if not plugin_path.exists():
             raise PluginLoadError(f"Local plugin '{plugin_id}' not found at {plugin_path}")
@@ -76,7 +125,8 @@ class PluginLoader:
             raise PluginLoadError(f"Remote plugins MUST use HTTPS: {plugin_url}")
 
         # Resolve and validate IP (DNS Pinning start)
-        safe_ip = self._get_safe_ip(hostname)
+        # getaddrinfo blocks: keep DNS resolution off the event loop
+        safe_ip = await anyio.to_thread.run_sync(self._get_safe_ip, hostname)
         if not safe_ip:
             raise PluginLoadError(f"Remote plugin host '{hostname}' is unsafe or resolves to private IP.")
 

@@ -8,9 +8,9 @@ Deterministic execution control for AI agent actions in real systems.
 
 AXG sits between probabilistic AI interpretation and deterministic system writes. It evaluates risk, uncertainty, and policy constraints before any action is allowed to execute.
 
-## Status: 10/10 Production Ready
+## Status: Beta (v0.2)
 
-AXG has reached **10/10 technical maturity** (Stabilization 2.0). It is currently used as the trust layer for high-stakes enterprise AI orchestration, ensuring safety and compliance across the MUAI ecosystem.
+AXG is in production as the decision layer of the MUAI ecosystem. v0.2 adds authenticated callers and Passport v2. The API may still change before 1.0. Read [Security Model](#security-model) before exposing AXG outside a private network.
 
 ## Why AXG Exists
 
@@ -56,17 +56,34 @@ AXG is **not**:
 - **Agent Identity**: Supports agent identity and permission-based authorization.
 - **Declarative Rules**: Applies rules (`plugins/<plugin_id>/rules.json`) without dynamic code execution.
 - **Deterministic Scoring**: Computes `llm_confidence`, `final_confidence`, `risk_score`, and `uncertainty_score`.
-- **AXG Passport**: Issues short-lived RS256 signed `passport` for `ALLOW` decisions.
-- **Payload Integrity**: Mandatory SHA-256 hashing of actionable payloads to prevent tampering.
-- **Public Verification**: Exposes public keys through `/v1/certs`.
+- **Authenticated Callers**: API keys (stored as SHA-256) bind each caller to the apps it may request decisions for and to the permissions it may grant its agents.
+- **AXG Passport v2**: Issues short-lived RS256 signed `passport` tokens for `ALLOW` decisions only.
+- **Payload Integrity**: The whole actionable payload is bound to the Passport by a canonical (RFC 8785-style) SHA-256 hash, identical in Python and Node.
+- **Public Verification**: Exposes public keys through `/.well-known/jwks.json` (key rotation supported) and `/v1/certs`.
 - **Audit Sinks**: Structured logging, file (`JSONL`), and webhook audit sinks.
 - **CLI**: Tool for plugin validation and local decision simulation.
 
 ## AXG Passport
 
-AXG Passport makes AXG a cryptographic trust layer. When AXG returns an `ALLOW` decision, it includes a short-lived JWT `passport` signed with RS256.
+AXG Passport makes AXG a cryptographic trust layer. When an **authenticated** caller receives an `ALLOW` decision, the response includes a short-lived JWT `passport` signed with RS256. `SUGGEST`, `CONFIRM`, `BLOCK` and shadow-mode evaluations never carry one.
 
 Consumer systems (e.g., FinNorte, Social Intent) verify this token before trusting an AI-proposed action. The token binds the authorized action to a deterministic hash of the payload, preventing tampering or unauthorized modification.
+
+Passport v2 claims:
+
+| Claim | Meaning |
+|---|---|
+| `iss`, `aud`, `sub` | `axg-engine`, the `app_id`, the `execution_id` |
+| `iat`, `nbf`, `exp` | Issued at, valid from, expires (5 minutes) |
+| `jti` | Unique id: verifiers can enforce single use (`replay_cache` / `replayCache` in the SDKs) |
+| `ver` | `2` |
+| `tenant_id` | Tenant the decision was made for |
+| `azp` | Client that requested the decision |
+| `decision`, `action_type` | Always `ALLOW`, plus the authorized action |
+| `policy` | `plugin@version` that produced the decision |
+| `payload_hash` | Canonical SHA-256 of the `actionable_payload` |
+
+The SDKs (`sdks/axg-python-sdk`, `sdks/axg-node-sdk`) check signature, issuer, audience, validity window, decision, tenant, action type and payload hash. They also still verify v1 tokens.
 
 ### Passport Flow
 
@@ -95,9 +112,37 @@ Decision precedence:
 ## API
 
 - `GET /health`: Health check.
-- `POST /v1/decisions`: Main decision engine endpoint.
-- `GET /v1/certs`: Public key material for Passport verification.
+- `POST /v1/decisions`: Main decision engine endpoint (`Authorization: Bearer <api key>`).
+- `GET /.well-known/jwks.json`: Current and retired public keys for Passport verification.
+- `GET /v1/certs`: Current public key in PEM (legacy).
 - `POST /v1/plugins/reload`: Administrative plugin reload (requires `AXG_ADMIN_TOKEN`).
+
+## Security Model
+
+A Passport is only as trustworthy as the caller that asked for it, so:
+
+- Every network caller authenticates with an API key. `AXG_AUTH_MODE=required` (default) rejects anonymous calls with `401`. `optional` exists for migrations only: anonymous calls are evaluated but can never receive `ALLOW` or a Passport.
+- A caller may only request decisions for its own `app_ids` (the Passport audience), otherwise `403`.
+- Agent permissions in the request are capped by the permissions granted to the caller.
+- Without `AXG_PRIVATE_KEY`, AXG refuses to start when `AXG_ENV=production`; elsewhere it uses ephemeral development keys.
+- Remote plugins are off by default. When enabled, they load only from `AXG_REMOTE_PLUGIN_ALLOWLIST` entries. Each entry is parsed and must match exactly on scheme, host and port. A path in the entry scopes it on a segment boundary, and dot segments are rejected.
+
+Report vulnerabilities privately through GitHub Security Advisories on this repository, not in public issues.
+
+### Configuration
+
+| Variable | Purpose |
+|---|---|
+| `AXG_CLIENTS` | JSON list of callers: `[{"client_id": "muai", "key_sha256": "<sha256 of the key>", "app_ids": ["finnorte"], "permissions": ["*"]}]` |
+| `AXG_AUTH_MODE` | `required` (default) or `optional` (migration only) |
+| `AXG_ENV` | `production` makes a missing signing key fatal |
+| `AXG_PRIVATE_KEY` / `AXG_PUBLIC_KEY` | RS256 signing key (PEM; `\n` escapes accepted) |
+| `AXG_PREVIOUS_PUBLIC_KEYS` | JSON list of retired public keys still published in the JWKS during rotation |
+| `AXG_ADMIN_TOKEN` | Enables `POST /v1/plugins/reload` |
+| `ENABLE_REMOTE_PLUGINS`, `AXG_REMOTE_PLUGIN_ALLOWLIST` | Opt-in remote policies; comma-separated allowed origins, optionally with a path (`https://policies.example.com/axg/`) |
+| `AXG_AUDIT_FILE`, `AXG_AUDIT_WEBHOOK`, `AXG_AUDIT_WEBHOOK_TOKEN` | Audit sinks |
+
+Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" <key>`.
 
 ### Example Request
 
@@ -147,7 +192,8 @@ Decision precedence:
   "execution_id": "exec_001",
   "plugin_version": "finnorte@0.1.0",
   "decision": "CONFIRM",
-  "passport": "eyJhbGciOiJSUzI1NiIs...",
+  "passport": null,
+  "passport_id": null,
   "scores": {
     "llm_confidence": 0.78,
     "final_confidence": 0.48,
@@ -207,10 +253,12 @@ axg simulate-decision --plugin finnorte --payload ./examples/request.json --dir 
 
 ```text
 axg/
-  api.py              # FastAPI app and request/response logging
+  api.py              # FastAPI app, caller authentication and request/response logging
   audit.py            # file/webhook audit sinks
+  auth.py             # API key clients, audience and permission ceilings
+  canonical.py        # canonical JSON used for payload hashes (shared with the SDKs)
   cli.py              # plugin validation and decision simulation CLI
-  crypto.py           # RS256 Passport token signing and payload hashing
+  crypto.py           # RS256 Passport v2 signing, JWKS and key rotation
   engine.py           # deterministic decision orchestration
   models.py           # Pydantic schemas and enums
   plugin_loader.py    # plugin loading + schema validation
@@ -231,6 +279,7 @@ tests/
 - Unknown/high-uncertainty financial writes require confirmation.
 - Permission failures produce deterministic `BLOCK`.
 - Signing failures produce deterministic `CONFIRM` or safer.
+- Unauthenticated callers never receive `ALLOW` or a Passport.
 - Admin operations fail closed when not configured.
 - Every decision includes machine-readable and human-readable audit context.
 

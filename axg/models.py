@@ -78,6 +78,7 @@ class DecisionResponse(BaseModel):
     plugin_version: str
     decision: Decision
     passport: str | None = None
+    passport_id: str | None = None
     scores: DecisionScores
     actionable_payload: dict[str, Any] = Field(default_factory=dict)
     reason: str

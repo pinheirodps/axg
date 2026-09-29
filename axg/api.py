@@ -1,10 +1,12 @@
+import hmac
 import json
 import logging
 import os
 from typing import Annotated
 
-from fastapi import FastAPI, BackgroundTasks, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 
+from axg.auth import ANONYMOUS, Caller, authenticate, auth_mode
 from axg.engine import DecisionEngine
 from axg.models import DecisionRequest, DecisionResponse
 from axg.audit import audit_manager
@@ -15,7 +17,7 @@ logger = logging.getLogger("uvicorn.error")
 
 app = FastAPI(
     title="AXG - Agent Execution Guard",
-    version="0.1.0",
+    version="0.2.0",
     description="Deterministic execution control plane for AI agent actions.",
 )
 
@@ -28,7 +30,7 @@ async def health_check() -> dict[str, str]:
 @app.get("/v1/certs")
 async def get_certs() -> dict[str, str]:
     """Exposes the public key for verifying AXG decision tokens (Legacy PEM)."""
-    return {"public_key": get_public_key(), "kid": key_manager.KID, "alg": "RS256"}
+    return {"public_key": get_public_key(), "kid": key_manager.kid, "alg": "RS256"}
 
 
 @app.get("/.well-known/jwks.json")
@@ -43,16 +45,36 @@ async def reload_plugins(authorization: Annotated[str | None, Header()] = None) 
     expected_token = os.environ.get("AXG_ADMIN_TOKEN")
     if not expected_token:
         raise HTTPException(status_code=401, detail="AXG_ADMIN_TOKEN is not configured")
-    if not authorization or authorization != f"Bearer {expected_token}":
+    if not authorization or not hmac.compare_digest(authorization, f"Bearer {expected_token}"):
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     engine.loader.clear_cache()
     return {"status": "reloaded"}
 
 
+def resolve_caller(authorization: Annotated[str | None, Header()] = None) -> Caller:
+    """Identify the network caller from its API key (``Authorization: Bearer <key>``)."""
+    if authorization:
+        scheme, _, api_key = authorization.partition(" ")
+        caller = authenticate(api_key.strip()) if scheme.lower() == "bearer" and api_key.strip() else None
+        if caller is None:
+            raise HTTPException(status_code=401, detail="Invalid API key", headers={"WWW-Authenticate": "Bearer"})
+        return caller
+    if auth_mode() == "optional":
+        return ANONYMOUS
+    raise HTTPException(status_code=401, detail="API key required", headers={"WWW-Authenticate": "Bearer"})
+
+
 @app.post("/v1/decisions", response_model=DecisionResponse)
-async def create_decision(request: DecisionRequest, background_tasks: BackgroundTasks) -> DecisionResponse:
+async def create_decision(
+    request: DecisionRequest,
+    background_tasks: BackgroundTasks,
+    caller: Annotated[Caller, Depends(resolve_caller)],
+) -> DecisionResponse:
     """Core endpoint to evaluate agent actions against security policies."""
+    if not caller.may_act_for(request.app_id):
+        raise HTTPException(status_code=403, detail="Caller is not allowed to request decisions for this app")
+
     logger.info(
         json.dumps(
             {
@@ -67,13 +89,13 @@ async def create_decision(request: DecisionRequest, background_tasks: Background
                 "source": request.source,
                 "action_type": request.action_type,
                 "tenant_id": request.tenant_id,
+                "client_id": caller.client_id,
             },
             sort_keys=True,
         )
     )
-    
-    # Engine is now async
-    response = await engine.decide(request)
+
+    response = await engine.decide(request, caller)
     
     # Audit recording using the new ExecutionRecord Spine
     execution_record = engine.get_execution_record(request, response)

@@ -5,12 +5,15 @@ services:
     ports:
       - "8090:8090"
     environment:
-      - AXG_ADMIN_TOKEN=axg-secret-123
+      # Secrets come from the environment / .env, never from this file
+      - AXG_ADMIN_TOKEN=${AXG_ADMIN_TOKEN:-}
       - AXG_PRIVATE_KEY=${AXG_PRIVATE_KEY:-}
+      - AXG_CLIENTS=${AXG_CLIENTS:-}
+      - AXG_AUTH_MODE=${AXG_AUTH_MODE:-required}
     volumes:
       - ./plugins:/app/plugins
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

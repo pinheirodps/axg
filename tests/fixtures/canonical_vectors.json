@@ -1,0 +1,44 @@
+[
+  {
+    "name": "ascii",
+    "input": "{\"merchant\":\"Uber\",\"amount\":1500}",
+    "canonical": "{\"amount\":1500,\"merchant\":\"Uber\"}",
+    "sha256": "4c768ed647e5090246c790a5c7378785152e84a0777a692f5ebfd5158f538adf"
+  },
+  {
+    "name": "pt_br_accents",
+    "input": "{\"category\":\"Alimentação\",\"amount\":12.5}",
+    "canonical": "{\"amount\":12.5,\"category\":\"Alimentação\"}",
+    "sha256": "f22f5e0d4a882eb79d7d6f94d42a5f4c095b214879361d07c3d0b1ccb9fa4153"
+  },
+  {
+    "name": "integral_float",
+    "input": "{\"amount\":1500.0}",
+    "canonical": "{\"amount\":1500}",
+    "sha256": "d30bcd4f029738b3b07fa1fedd509dda26562cbf1d7233da401953f0fde666a5"
+  },
+  {
+    "name": "number_formats",
+    "input": "{\"a\":[1e21,1e20,1e-7,1e-6,0.000001234,123456789012345680000.0,-0.0,0.1,-2.5e-10,5e-324,1.7976931348623157e308,9007199254740993,-7]}",
+    "canonical": "{\"a\":[1e+21,100000000000000000000,1e-7,0.000001,0.000001234,123456789012345680000,0,0.1,-2.5e-10,5e-324,1.7976931348623157e+308,9007199254740992,-7]}",
+    "sha256": "73ca221902fbbcccc99babd2cac38127b8c9713fa66fd3f548ba783d158a8f8f"
+  },
+  {
+    "name": "strings_and_nesting",
+    "input": "{\"b\":true,\"n\":null,\"s\":\"quote\\\" back\\\\ ctrl\\u0001 tab\\t nl\\n emoji \\ud83d\\ude00 é \\u2028\",\"nested\":{\"z\":1,\"y\":[{\"k\":2.0}]}}",
+    "canonical": "{\"b\":true,\"n\":null,\"nested\":{\"y\":[{\"k\":2}],\"z\":1},\"s\":\"quote\\\" back\\\\ ctrl\\u0001 tab\\t nl\\n emoji 😀 é  \"}",
+    "sha256": "7386ec9336eb08d917410e91d15939578b4763849b4411c6e3507b04c5d83541"
+  },
+  {
+    "name": "key_ordering",
+    "input": "{\"é\":1,\"e\":2,\"Z\":3,\"a\":4,\"\":5}",
+    "canonical": "{\"\":5,\"Z\":3,\"a\":4,\"e\":2,\"é\":1}",
+    "sha256": "324a217e9e651e21355bb222c7197501c16affd78b401e4e52434832006a3360"
+  },
+  {
+    "name": "non_bmp_key_ordering",
+    "input": "{\"\\uffff\":1,\"\\ud800\\udc00\":2,\"a\":3}",
+    "canonical": "{\"a\":3,\"𐀀\":2,\"￿\":1}",
+    "sha256": "6c75323f2e1c8dcea926319a73fbb3ab58b0f063893b8d5b5e5c7c126290cb67"
+  }
+]

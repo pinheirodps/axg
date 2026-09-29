@@ -10,7 +10,11 @@ COPY pyproject.toml README.md ./
 COPY axg ./axg
 COPY plugins ./plugins
 
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . \
+    && useradd --system --uid 10001 --no-create-home axg \
+    && chown -R axg /app
+
+USER axg
 
 EXPOSE 8090
 

@@ -9,6 +9,29 @@ export interface AxgPassportClaims extends jose.JWTPayload {
   decision: 'ALLOW' | 'SUGGEST' | 'CONFIRM' | 'BLOCK';
   action_type: string;
   payload_hash: string;
+  // Passport v2
+  ver?: number;
+  tenant_id?: string;
+  azp?: string; // client that requested the decision
+  policy?: string; // plugin@version
+}
+
+/** Single-use enforcement for Passports (v2 carries a jti). */
+export interface ReplayCache {
+  checkAndStore(jti: string, expiresAt: number): boolean | Promise<boolean>;
+}
+
+/** Process-local replay protection. Use a shared store (e.g. Redis SET NX) across replicas. */
+export class InMemoryReplayCache implements ReplayCache {
+  private seen = new Map<string, number>();
+
+  checkAndStore(jti: string, expiresAt: number): boolean {
+    const now = Math.floor(Date.now() / 1000);
+    for (const [key, exp] of this.seen) if (exp <= now) this.seen.delete(key);
+    if (this.seen.has(jti)) return false;
+    this.seen.set(jti, expiresAt);
+    return true;
+  }
 }
 
 export interface VerificationOptions {
@@ -16,6 +39,7 @@ export interface VerificationOptions {
   tenantId?: string;
   allowedActionTypes?: string[];
   publicKey?: string; // Optional local public key (PEM) to skip JWKS fetch
+  replayCache?: ReplayCache; // Reject a Passport presented more than once (needs Passport v2)
 }
 
 export class AxgVerificationError extends Error {
@@ -25,16 +49,29 @@ export class AxgVerificationError extends Error {
   }
 }
 
-/**
- * Deterministic SHA-256 hash of a payload.
- * Matches AXG (Python) implementation.
- */
-export function hashPayload(payload: Record<string, any>): string {
+function serialize(payload: Record<string, any>): string {
   const serialized = stringify(payload);
   if (serialized === undefined) {
     throw new Error('Failed to serialize payload: result was undefined');
   }
-  return createHash('sha256').update(serialized).digest('hex');
+  return serialized;
+}
+
+/**
+ * Canonical SHA-256 hash used by Passport v2 (sorted keys, UTF-8, ECMAScript numbers).
+ * Byte-identical to AXG core and the Python SDK (tests/fixtures/canonical_vectors.json).
+ */
+export function hashPayload(payload: Record<string, any>): string {
+  return createHash('sha256').update(serialize(payload)).digest('hex');
+}
+
+/** Passport v1 hash: Python's json.dumps escaped every non-ASCII UTF-16 unit as \uXXXX. */
+export function legacyHashPayload(payload: Record<string, any>): string {
+  const escaped = serialize(payload).replace(
+    /[\u0080-￿]/g,
+    (c) => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'),
+  );
+  return createHash('sha256').update(escaped).digest('hex');
 }
 
 /**
@@ -96,8 +133,19 @@ export async function verifyPassport(
       throw new AxgVerificationError('Missing payload_hash claim in passport.', 'MISSING_PAYLOAD_HASH');
     }
 
-    if (claims.payload_hash !== hashPayload(payload)) {
+    const expectedHash = passport.ver === 2 ? hashPayload(payload) : legacyHashPayload(payload);
+    if (claims.payload_hash !== expectedHash) {
       throw new AxgVerificationError('Payload hash mismatch. Possible tampering detected.', 'PAYLOAD_TAMPERED');
+    }
+
+    // 5. Replay protection (single use within the validity window)
+    if (options.replayCache) {
+      if (!passport.jti) {
+        throw new AxgVerificationError('Passport has no jti; replay protection needs Passport v2.', 'MISSING_JTI');
+      }
+      if (!(await options.replayCache.checkAndStore(passport.jti, Number(passport.exp)))) {
+        throw new AxgVerificationError('Passport was already used.', 'PASSPORT_REPLAYED');
+      }
     }
 
     return passport;
