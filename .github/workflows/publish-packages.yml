@@ -41,7 +41,7 @@ jobs:
           twine check dist/*
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@76f52e6691cc972e5042c5b49038b55d80860f56 # v1.12.4
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
           # Uses OIDC Trusted Publishing by default when id-token: write is set.
@@ -82,7 +82,7 @@ jobs:
           twine check dist/*
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@76f52e6691cc972e5042c5b49038b55d80860f56 # v1.12.4
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: sdks/axg-python-sdk/dist/
           password: ${{ secrets.PYPI_API_TOKEN }}

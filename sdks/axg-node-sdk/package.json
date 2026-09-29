@@ -24,7 +24,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/pinheirodps/axg.git",
+    "url": "git+https://github.com/pinheirodps/axg.git",
     "directory": "sdks/axg-node-sdk"
   },
   "scripts": {
