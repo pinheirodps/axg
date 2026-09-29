@@ -162,7 +162,9 @@ def test_api_joins_the_caller_trace_and_links_the_audit_record(spans, api_client
     )
 
     assert response.status_code == 200
-    (span,) = spans.get_finished_spans()
+    decide_spans = [s for s in spans.get_finished_spans() if s.name == "axg.decide"]
+    assert len(decide_spans) == 1
+    span = decide_spans[0]
     assert format(span.context.trace_id, "032x") == TRACE_ID
     assert format(span.parent.span_id, "016x") == PARENT_SPAN_ID
     assert recorded.await_args.args[0].trace_id == TRACE_ID
