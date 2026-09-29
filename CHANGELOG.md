@@ -4,6 +4,7 @@
 
 ### Added
 
+- `integrations/claude_code`: Claude Code `PreToolUse` hook. BLOCK → `deny`, CONFIRM/SUGGEST → `ask`, ALLOW → normal permission flow (auto `allow` is opt-in), AXG unavailable → `ask` (or `deny`). New example policy `plugins/claude-code`: destructive commands and piped remote scripts are blocked; force pushes, deploys and secret files require confirmation.
 - Published JSON Schemas for the wire contracts in `schemas/` (`decision_request.v1`, `decision_response.v1`, `execution_record.v1`, `passport_claims.v2`), generated with `python -m axg.schemas` and checked in CI.
 - `PassportClaimsV2` model: `sign_decision` builds Passport claims through it, so the token and the published schema share one definition. It only accepts `decision="ALLOW"`.
 

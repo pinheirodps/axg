@@ -1,0 +1,114 @@
+{
+  "plugin": "claude-code",
+  "version": "0.1.0",
+  "domain": "coding-agent",
+  "thresholds": {
+    "allow_min_confidence": 0.85,
+    "suggest_min_confidence": 0.65,
+    "high_risk_threshold": 0.8
+  },
+  "actions": {
+    "Read": {"base_risk": 0.05},
+    "Glob": {"base_risk": 0.05},
+    "Grep": {"base_risk": 0.05},
+    "WebSearch": {"base_risk": 0.1},
+    "WebFetch": {"base_risk": 0.2},
+    "Edit": {"base_risk": 0.3},
+    "Write": {"base_risk": 0.35},
+    "NotebookEdit": {"base_risk": 0.3},
+    "Bash": {"base_risk": 0.5},
+    "PowerShell": {"base_risk": 0.5}
+  },
+  "rules": [
+    {
+      "id": "destructive_shell_command",
+      "description": "Irreversible destruction of the file system or devices.",
+      "condition": {
+        "all": [{"field": "action_type", "operator": "in", "value": ["Bash", "PowerShell"]}],
+        "any": [
+          {"field": "payload.command", "operator": "contains", "value": "rm -rf /"},
+          {"field": "payload.command", "operator": "contains", "value": "rm -rf ~"},
+          {"field": "payload.command", "operator": "contains", "value": "rm -rf *"},
+          {"field": "payload.command", "operator": "contains", "value": "mkfs"},
+          {"field": "payload.command", "operator": "contains", "value": "dd if="},
+          {"field": "payload.command", "operator": "contains", "value": "format c:"},
+          {"field": "payload.command", "operator": "contains", "value": "Remove-Item -Recurse -Force C:\\"}
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "This command can irreversibly destroy files or devices.",
+      "risk_delta": 0.5
+    },
+    {
+      "id": "remote_script_piped_to_shell",
+      "description": "Executing a downloaded script without review.",
+      "condition": {
+        "all": [{"field": "action_type", "operator": "in", "value": ["Bash", "PowerShell"]}],
+        "any": [
+          {"field": "payload.command", "operator": "contains", "value": "| sh"},
+          {"field": "payload.command", "operator": "contains", "value": "| bash"},
+          {"field": "payload.command", "operator": "contains", "value": "|sh"},
+          {"field": "payload.command", "operator": "contains", "value": "|bash"},
+          {"field": "payload.command", "operator": "contains", "value": "iex (iwr"},
+          {"field": "payload.command", "operator": "contains", "value": "Invoke-Expression (Invoke-WebRequest"}
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "Downloaded scripts must not be piped straight into a shell.",
+      "risk_delta": 0.4
+    },
+    {
+      "id": "history_rewrite_or_hard_reset",
+      "description": "Git operations that discard work or rewrite shared history.",
+      "condition": {
+        "all": [{"field": "action_type", "operator": "in", "value": ["Bash", "PowerShell"]}],
+        "any": [
+          {"field": "payload.command", "operator": "contains", "value": "push --force"},
+          {"field": "payload.command", "operator": "contains", "value": "push -f"},
+          {"field": "payload.command", "operator": "contains", "value": "reset --hard"},
+          {"field": "payload.command", "operator": "contains", "value": "clean -fd"},
+          {"field": "payload.command", "operator": "contains", "value": "branch -D"}
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "This Git operation can discard work or rewrite shared history.",
+      "risk_delta": 0.3
+    },
+    {
+      "id": "production_deploy",
+      "description": "Commands that change live infrastructure.",
+      "condition": {
+        "all": [{"field": "action_type", "operator": "in", "value": ["Bash", "PowerShell"]}],
+        "any": [
+          {"field": "payload.command", "operator": "contains", "value": "firebase deploy"},
+          {"field": "payload.command", "operator": "contains", "value": "terraform apply"},
+          {"field": "payload.command", "operator": "contains", "value": "terraform destroy"},
+          {"field": "payload.command", "operator": "contains", "value": "kubectl delete"},
+          {"field": "payload.command", "operator": "contains", "value": "gcloud run deploy"},
+          {"field": "payload.command", "operator": "contains", "value": "docker compose -f docker-compose.ia.yml up"}
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "This command changes live infrastructure.",
+      "risk_delta": 0.3
+    },
+    {
+      "id": "secret_files",
+      "description": "Reading or changing credentials and secret files.",
+      "condition": {
+        "all": [{"field": "action_type", "operator": "in", "value": ["Read", "Edit", "Write", "NotebookEdit"]}],
+        "any": [
+          {"field": "payload.file_path", "operator": "contains", "value": ".env"},
+          {"field": "payload.file_path", "operator": "contains", "value": "id_rsa"},
+          {"field": "payload.file_path", "operator": "contains", "value": ".pem"},
+          {"field": "payload.file_path", "operator": "contains", "value": "serviceaccount"},
+          {"field": "payload.file_path", "operator": "contains", "value": "credentials"},
+          {"field": "payload.file_path", "operator": "contains", "value": ".key"}
+        ]
+      },
+      "decision": "CONFIRM",
+      "reason": "This file looks like it holds credentials or secrets.",
+      "risk_delta": 0.3
+    }
+  ]
+}
