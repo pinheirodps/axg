@@ -210,5 +210,13 @@
       "risk_delta": 0.2,
       "audit_flags": ["low_confidence"]
     }
-  ]
+  ],
+  "uncertainty_gate": {
+    "actions": ["add_expense", "add_income", "create_transaction", "categorize_transaction", "detect_subscription", "create_expense", "create_income"],
+    "uncertain_sources": ["whatsapp_bot", "telegram_bot", "chat"],
+    "uncertain_source_suffixes": ["_bot"],
+    "threshold": 0.7,
+    "audit_flag": "financial_write_requires_confirmation",
+    "reason": "Intent could not be confidently identified. Because this is a financial write operation, confirmation is required before saving."
+  }
 }

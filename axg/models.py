@@ -165,6 +165,24 @@ class ActionPolicy(BaseModel):
     base_risk: float = Field(default=0.25, ge=0.0, le=1.0)
 
 
+class UncertaintyGate(BaseModel):
+    """Writes that must be confirmed when the intent behind them is uncertain.
+
+    Domain-specific by design: each plugin lists its own sensitive actions. Without actions,
+    the gate never triggers (the engine itself knows no domain).
+    """
+
+    actions: list[str] = Field(default_factory=list)
+    uncertain_sources: list[str] = Field(default_factory=lambda: ["whatsapp_bot", "telegram_bot", "chat"])
+    uncertain_source_suffixes: list[str] = Field(default_factory=lambda: ["_bot"])
+    threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    audit_flag: str = "write_requires_confirmation"
+    reason: str = (
+        "Intent could not be confidently identified. This action changes data, "
+        "so confirmation is required before execution."
+    )
+
+
 class Plugin(BaseModel):
     schema_version: str = "axg.plugin_manifest.v1"
     plugin: str
@@ -173,6 +191,7 @@ class Plugin(BaseModel):
     thresholds: Thresholds = Field(default_factory=Thresholds)
     actions: dict[str, ActionPolicy] = Field(default_factory=dict)
     rules: list[PolicyRule] = Field(default_factory=list)
+    uncertainty_gate: UncertaintyGate = Field(default_factory=UncertaintyGate)
 
     model_config = ConfigDict(populate_by_name=True)
 
