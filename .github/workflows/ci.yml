@@ -79,3 +79,22 @@ jobs:
       run: pip-audit . --progress-spinner off
     - name: Run Python SDK Tests
       run: pytest
+
+  test-agt-dotnet:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integrations/agt-dotnet
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Set up .NET
+      uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        dotnet-version: '8.0.x'
+    - name: Check vulnerable packages
+      run: |
+        dotnet restore
+        dotnet list package --vulnerable --include-transitive | tee vulnerable.txt
+        ! grep -q "has the following vulnerable packages" vulnerable.txt
+    - name: Test Microsoft AGT backend
+      run: dotnet test --nologo
