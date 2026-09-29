@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Published JSON Schemas for the wire contracts in `schemas/` (`decision_request.v1`, `decision_response.v1`, `execution_record.v1`, `passport_claims.v2`), generated with `python -m axg.schemas` and checked in CI.
+- `PassportClaimsV2` model: `sign_decision` builds Passport claims through it, so the token and the published schema share one definition. It only accepts `decision="ALLOW"`.
+
 ## 0.2.1
 
 ### Security

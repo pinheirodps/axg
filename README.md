@@ -238,6 +238,19 @@ Generate a client key hash with `python -c "import hashlib,sys; print(hashlib.sh
 }
 ```
 
+## Contracts
+
+The wire contracts are published as JSON Schema (draft 2020-12) in [`schemas/`](schemas/):
+
+| Schema | Describes |
+|---|---|
+| `decision_request.v1.schema.json` | `POST /v1/decisions` request |
+| `decision_response.v1.schema.json` | `POST /v1/decisions` response |
+| `execution_record.v1.schema.json` | Audit record written by the audit sinks |
+| `passport_claims.v2.schema.json` | Claims of the Passport v2 JWT |
+
+They are generated from the models (`python -m axg.schemas`). CI fails if a committed schema drifts from its model, so integrators can pin a schema version and validate against it.
+
 ## Plugin Model
 
 Plugins are JSON-only policies. Path: `plugins/<plugin_id>/rules.json`
