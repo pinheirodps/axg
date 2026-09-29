@@ -7,6 +7,12 @@ A Passport is AXG's signed proof that an action was authorized for one app, one 
 ## Installation
 
 ```bash
+pip install axg-python-sdk
+```
+
+Or install from git:
+
+```bash
 pip install "axg-python-sdk @ git+https://github.com/pinheirodps/axg#subdirectory=sdks/axg-python-sdk"
 ```
 
