@@ -4,8 +4,8 @@
 
 ### Added
 
-- `integrations/agentcore`: AWS Bedrock AgentCore Gateway REQUEST interceptor (Lambda, standard library only). Every MCP `tools/call` becomes an AXG decision. On ALLOW, the call continues with the Passport and the authorized payload in `params._meta`. Otherwise it is short-circuited with a readable `isError` tool result, and it fails closed when AXG is unavailable.
-- SDKs: `verify_mcp_tool_call` (Python) and `verifyMcpToolCall` (Node) for MCP tools. They verify the Passport for that tool, and check that every received argument matches what AXG authorized.
+- Published JSON Schemas for the wire contracts in `schemas/` (`decision_request.v1`, `decision_response.v1`, `execution_record.v1`, `passport_claims.v2`), generated with `python -m axg.schemas` and checked in CI.
+- `PassportClaimsV2` model: `sign_decision` builds Passport claims through it, so the token and the published schema share one definition. It only accepts `decision="ALLOW"`.
 
 ## 0.2.1
 
