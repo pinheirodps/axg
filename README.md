@@ -103,7 +103,7 @@ async def main():
 asyncio.run(main())
 ```
 
-Install with `pip install "axg @ git+https://github.com/pinheirodps/axg"` (add `[otel]` for OpenTelemetry export).
+Install the current release with `pip install "axg @ git+https://github.com/pinheirodps/axg@v0.3.0"` (add `[otel]` for OpenTelemetry export). PyPI and npm packages are prepared by the release workflow and will be announced in the [changelog](CHANGELOG.md) once uploaded.
 
 ## Integrations
 
@@ -152,9 +152,9 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 
 ## Status and roadmap
 
-AXG is **beta (v0.2)** and runs in production. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
+AXG is **beta (v0.3.0)** and runs in production. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
 
-Next: an approvals API to turn `CONFIRM` into a signed human decision, signed context from trusted providers, an MCP gateway mode, and packages on PyPI and npm.
+Next: an approvals API to turn `CONFIRM` into a signed human decision, signed context from trusted providers, an MCP gateway mode, and the first upload of the packages to PyPI and npm.
 
 ## Contributing
 

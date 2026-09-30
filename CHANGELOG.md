@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-09-30)
+
+Upgrade notes: audit consumers read `axg.execution_record.v2`; `AXG_CLIENTS` entries must declare `permissions` explicitly; validate your policies with `axg validate-plugin` (unknown rule operators are now rejected).
 
 ### Breaking
 
@@ -19,7 +21,8 @@
 - Documentation in `docs/`: concepts, writing policies, Passport, API and contracts, configuration and deployment, security model, observability. The README is rewritten around a working quickstart.
 - `plugin_manifest.v1.schema.json`: editor validation and completion for policy files (`"$schema"`). The bundled policies are tested against it.
 - `examples/`: quickstart requests (`allow.json`, `block.json`) and a complete example policy (`examples/plugins/support_refunds`), all exercised by the test suite so the documentation cannot drift.
-- Images for `linux/amd64` and `linux/arm64`, and continuous deployment of `main` with a health check and automatic rollback.
+- Images for `linux/amd64` and `linux/arm64`, and continuous deployment of `main` with a health check and automatic rollback. Release images are tagged with the version (`0.3.0`); `latest` follows `main`.
+- Release workflow that builds, checks and publishes `axg` and `axg-python-sdk` to PyPI (trusted publishing) and `axg-node-sdk` to npm. The SDKs now share the core version (the Node SDK moves from 1.1.0 to 0.3.0; it had never been published) and ship their license.
 - OpenTelemetry: one `axg.decide` span per decision (joined to the caller's W3C `traceparent`), an `axg.rule.triggered` event per matched rule, and the metrics `axg.decisions`, `axg.rules.triggered` and `axg.decision.duration`. The core depends on `opentelemetry-api` only (no-op without an SDK). The `axg[otel]` extra ships in the image and exports over OTLP/HTTP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. `ExecutionRecord.trace_id` links audit records to traces. Payloads, reasons, intents and Passports never reach telemetry.
 - `integrations/claude_code`: Claude Code `PreToolUse` hook. BLOCK → `deny`, CONFIRM/SUGGEST → `ask`, ALLOW → normal permission flow (auto `allow` is opt-in), AXG unavailable → `ask` (or `deny`). New example policy `plugins/claude-code`: destructive commands and piped remote scripts are blocked; force pushes, deploys and secret files require confirmation.
 - `integrations/agt-dotnet`: `Axg.AgentGovernance`, an `IExternalPolicyBackend` for the Microsoft Agent Governance Toolkit (verified on `Microsoft.AgentGovernance` 5.0.0). ALLOW with a Passport allows; SUGGEST and CONFIRM deny with `RequiresApproval`; BLOCK denies; errors fail closed. `AxgDecisionSink` hands the Passport to the host, because the toolkit drops backend metadata.
