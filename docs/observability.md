@@ -24,6 +24,7 @@ Send a W3C `traceparent` header with `POST /v1/decisions`, and the `axg.decide` 
 | Histogram | `axg.decision.duration` (seconds) | Same attributes as `axg.decisions`, plus `error.type` on failures |
 | Span | `axg.approve` | `axg.approval.outcome` (approved, denied, rejected), `axg.approval.ticket_id`, `axg.approval.role`, `axg.policy`, `axg.action.type`, `axg.client.id`, and the rejection reason |
 | Counter | `axg.approvals` | By `axg.approval.outcome` and `axg.client.id` |
+| Span | `axg.introspect` | `axg.introspection.active`, `axg.client.id` |
 
 Metric attributes are low-cardinality on purpose: tenant, execution and agent ids appear on spans only.
 

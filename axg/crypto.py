@@ -297,3 +297,30 @@ def verify_approval_ticket(token: str) -> ApprovalTicketClaims:
     except Exception as exc:
         raise ApprovalTicketError("Invalid or expired approval ticket") from exc
 
+
+def introspect_passport(
+    token: str, *, action_type: str | None = None, actionable_payload: dict[str, Any] | None = None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Return (claims, None) for a valid ALLOW Passport issued by this AXG, else (None, reason)."""
+    try:
+        header = jwt.get_unverified_header(token)
+        if header.get("typ") == APPROVAL_TICKET_TYP:
+            return None, "This is an approval ticket, not a Passport"
+        key = key_manager.verification_key(header.get("kid"))
+        if key is None:
+            return None, "Unknown signing key"
+        claims = jwt.decode(
+            token, key, algorithms=["RS256"], issuer=ISSUER,
+            options={"require": ["exp", "nbf", "jti"], "verify_aud": False},
+        )
+    except jwt.ExpiredSignatureError:
+        return None, "Passport expired"
+    except jwt.PyJWTError:
+        return None, "Invalid Passport"
+    if claims.get("decision") != "ALLOW":
+        return None, "Not an ALLOW Passport"
+    if action_type is not None and claims.get("action_type") != action_type:
+        return None, "Passport issued for another action"
+    if actionable_payload is not None and hash_payload(actionable_payload) != claims.get("payload_hash"):
+        return None, "Payload differs from the one the Passport authorizes"
+    return claims, None

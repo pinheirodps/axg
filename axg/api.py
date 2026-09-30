@@ -9,11 +9,18 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Re
 from axg.auth import ANONYMOUS, Caller, authenticate, auth_mode
 from axg.engine import DecisionEngine
 from axg.approvals import ApprovalRejected, ApprovalService
-from axg.models import ApprovalRequest, ApprovalResponse, DecisionRequest, DecisionResponse
+from axg.models import (
+    ApprovalRequest,
+    ApprovalResponse,
+    DecisionRequest,
+    DecisionResponse,
+    IntrospectionRequest,
+    IntrospectionResponse,
+)
 from axg.audit import audit_manager
-from axg.crypto import get_public_key, get_jwks, key_manager
+from axg.crypto import get_jwks, get_public_key, introspect_passport, key_manager
 from axg.limits import BodySizeLimitMiddleware, rate_limiter
-from axg.telemetry import AXG_VERSION, configure_from_env, continue_trace, observe_approval
+from axg.telemetry import AXG_VERSION, configure_from_env, continue_trace, observe_approval, observe_introspection
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("uvicorn.error")
@@ -158,3 +165,29 @@ async def submit_approval(
     background_tasks.add_task(audit_manager.record_decision, record.model_dump(mode="json"))
     return response
 
+
+@app.post("/v1/passports/introspect", response_model=IntrospectionResponse)
+async def introspect(
+    request: IntrospectionRequest,
+    http_request: Request,
+    caller: Annotated[Caller, Depends(resolve_caller)],
+) -> IntrospectionResponse:
+    """Is this Passport valid for this action and payload? For gateways that cannot verify RS256 themselves."""
+    if not caller.authenticated:
+        raise HTTPException(status_code=401, detail="Introspection requires an authenticated caller",
+                            headers={"WWW-Authenticate": "Bearer"})
+    retry_after = rate_limiter.check(caller.client_id)
+    if retry_after is not None:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded", headers={"Retry-After": str(retry_after)})
+
+    with continue_trace(http_request.headers), observe_introspection(caller) as outcome:
+        claims, reason = introspect_passport(
+            request.passport, action_type=request.action_type, actionable_payload=request.actionable_payload
+        )
+        # A caller learns nothing about Passports for apps it may not act for (RFC 7662 section 2.2)
+        if claims is not None and not caller.may_act_for(claims["aud"]):
+            claims, reason = None, None
+        outcome["axg.introspection.active"] = claims is not None
+    if claims is None:
+        return IntrospectionResponse(active=False, reason=reason)
+    return IntrospectionResponse(active=True, claims=claims)

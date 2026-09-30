@@ -342,6 +342,30 @@ class ApprovalRecord(BaseModel):
 
 
 
+
+class IntrospectionRequest(BaseModel):
+    """Ask AXG whether a Passport is valid, optionally for one action and one payload (RFC 7662-style)."""
+
+    schema_version: str = "axg.passport_introspection_request.v1"
+    passport: str
+    action_type: str | None = Field(default=None, description="If set, the Passport must be for this action")
+    actionable_payload: dict[str, Any] | None = Field(
+        default=None, description="If set, the Passport's payload_hash must match this payload"
+    )
+
+
+class IntrospectionResponse(BaseModel):
+    """``active`` is true only for an unexpired ALLOW Passport issued by this AXG and matching the request.
+
+    Single use is not tracked here (AXG is stateless): executors enforce it with a replay cache.
+    """
+
+    schema_version: str = "axg.passport_introspection_response.v1"
+    active: bool
+    reason: str | None = Field(default=None, description="Why the Passport is not active, when it is safe to say")
+    claims: dict[str, Any] | None = Field(default=None, description="The Passport claims, when active")
+
+
 # Resolve forward references to the approval models declared above
 DecisionResponse.model_rebuild()
 PassportClaimsV2.model_rebuild()
