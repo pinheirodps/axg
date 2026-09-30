@@ -80,6 +80,7 @@
     },
     "context": {
       "additionalProperties": true,
+      "description": "Facts reported by the caller; rules read them as context.<fact>",
       "title": "Context",
       "type": "object"
     },
@@ -118,6 +119,15 @@
       "default": false,
       "title": "Shadow Mode",
       "type": "boolean"
+    },
+    "signed_context": {
+      "description": "JWTs from trusted context providers (AXG_CONTEXT_PROVIDERS); rules read their facts as verified.<provider>.<fact>",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Signed Context",
+      "type": "array"
     },
     "source": {
       "title": "Source",

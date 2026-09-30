@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from axg.models import (
     TriggeredRule,
 )
 from axg.auth import TRUSTED_LOCAL, Caller
+from axg.context import VerifiedContext, verify_signed_context
 from axg.plugin_loader import PluginLoader, PluginLoadError
 from axg.rules import RuleEngine
 from axg.crypto import hash_payload, sign_approval_ticket, sign_decision
@@ -61,12 +63,26 @@ class DecisionEngine:
             logger.exception("AXG plugin load failed: %s", request.plugin_id)
             return await self._fail_safe(request, str(exc))
 
-        triggered_rules = self.rules.evaluate_rules(plugin.rules, request.model_dump())
+        verified = await self._verified_context(request)
+        triggered_rules = self.rules.evaluate_rules(plugin.rules, self._rule_data(request, verified))
         scores = self._scores(plugin, request, triggered_rules)
         decision = self._final_decision(plugin, request, triggered_rules, scores, caller)
         audit_flags = self._audit_flags(plugin, triggered_rules, request, scores)
         actionable_payload = self._actionable_payload(request, triggered_rules)
         reason = self._reason(plugin, decision, triggered_rules, request, scores)
+
+        if verified.rejected:
+            audit_flags.append("signed_context_rejected")
+        missing_context = self._missing_context(plugin, request, verified)
+        if missing_context:
+            audit_flags.append("verified_context_missing")
+            # Raises to CONFIRM; never lowers a BLOCK
+            if DECISION_PRECEDENCE[decision] < DECISION_PRECEDENCE[Decision.CONFIRM]:
+                decision = Decision.CONFIRM
+                reason = (
+                    f"This action needs verified context from {', '.join(missing_context)}, which was missing or "
+                    "invalid. Confirmation is required before execution."
+                )
 
         if decision == Decision.ALLOW and not caller.authenticated:
             decision = Decision.CONFIRM
@@ -121,9 +137,28 @@ class DecisionEngine:
             ],
             shadow_mode=request.shadow_mode,
             metadata=request.metadata,
+            verified_context=sorted(verified.facts),
         )
         logger.info(json.dumps(self.get_decision_log(request, response), sort_keys=True))
         return response
+
+    async def _verified_context(self, request: DecisionRequest) -> VerifiedContext:
+        if not request.signed_context:
+            return VerifiedContext()
+        # Verification may fetch a provider's JWKS: keep it off the event loop
+        return await asyncio.to_thread(
+            verify_signed_context, request.signed_context, request.tenant_id, request.user_id
+        )
+
+    @staticmethod
+    def _rule_data(request: DecisionRequest, verified: VerifiedContext) -> dict[str, Any]:
+        # verified.* comes only from checked signatures; the request model has no field of that name
+        return {**request.model_dump(), "verified": verified.facts}
+
+    @staticmethod
+    def _missing_context(plugin: Plugin, request: DecisionRequest, verified: VerifiedContext) -> list[str]:
+        policy = plugin.actions.get(request.action_type)
+        return [p for p in (policy.required_context if policy else []) if p not in verified.facts]
 
     def _approval_challenge(
         self,
@@ -351,6 +386,7 @@ class DecisionEngine:
             passport_id=response.passport_id,
             human_confirmation_required=response.decision == Decision.CONFIRM,
             shadow_mode=request.shadow_mode,
+            verified_context=response.verified_context,
             execution_status=ExecutionStatus.PENDING,
             created_at=datetime.now(timezone.utc).isoformat(),
             metadata=response.metadata,

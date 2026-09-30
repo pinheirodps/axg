@@ -16,7 +16,7 @@ Send a W3C `traceparent` header with `POST /v1/decisions`, and the `axg.decide` 
 
 | Signal | Name | Content |
 |---|---|---|
-| Span | `axg.decide` | `axg.decision`, `axg.policy`, `axg.action.type`, `axg.plugin.id`, `axg.tenant.id`, `axg.app.id`, `axg.client.id`, `axg.execution.id`, `axg.source`, `axg.shadow_mode`, `axg.risk.score`, `axg.risk.level`, `axg.confidence.final`, `axg.uncertainty.score`, `axg.proposal.confidence`, `axg.proposal.model`, `axg.rules.triggered`, `axg.audit.flags`, `axg.passport.id`, `gen_ai.agent.id` |
+| Span | `axg.decide` | `axg.decision`, `axg.policy`, `axg.action.type`, `axg.plugin.id`, `axg.tenant.id`, `axg.app.id`, `axg.client.id`, `axg.execution.id`, `axg.source`, `axg.shadow_mode`, `axg.risk.score`, `axg.risk.level`, `axg.confidence.final`, `axg.uncertainty.score`, `axg.proposal.confidence`, `axg.proposal.model`, `axg.rules.triggered`, `axg.audit.flags`, `axg.context.verified`, `axg.passport.id`, `gen_ai.agent.id` |
 | Span event | `axg.rule.triggered` | `axg.rule.id`, `axg.rule.decision`, once per matched rule |
 | Span status | `ERROR` | Only when the policy could not be evaluated (`plugin_load_failed`, `passport_signing_failed`) or an exception escaped. `BLOCK` and `CONFIRM` are outcomes, not errors |
 | Counter | `axg.decisions` | By `axg.decision`, `axg.plugin.id`, `axg.action.type`, `axg.client.id`, `axg.shadow_mode` |

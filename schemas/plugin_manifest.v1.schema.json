@@ -22,6 +22,14 @@
           "title": "Base Risk",
           "type": "number"
         },
+        "required_context": {
+          "description": "Context providers whose verified facts this action needs; without them the decision is at least CONFIRM",
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Context",
+          "type": "array"
+        },
         "required_permissions": {
           "items": {
             "type": "string"

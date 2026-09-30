@@ -32,6 +32,7 @@ The OpenAPI document is served at `/openapi.json`, with interactive docs at `/do
   "action_type": "issue_refund",
   "payload": {"order_id": "A-1001", "amount": 800, "currency": "EUR"},
   "context": {},
+  "signed_context": [],
   "llm": {"model": "any-model", "confidence": 0.93, "raw_output": {}},
   "intent": {"original": "refund", "resolved": "issue_refund", "fallback_used": false},
   "shadow_mode": false,
@@ -50,7 +51,8 @@ The OpenAPI document is served at `/openapi.json`, with interactive docs at `/do
 | `source` | string | yes | Channel the request came from |
 | `action_type` | string | yes | The proposed action |
 | `payload` | object | no | Data of the action |
-| `context` | object | no | Extra facts for rules (for example account history) |
+| `context` | object | no | Facts reported by the caller, read by rules as `context.<fact>` |
+| `signed_context` | array of strings | no | Up to eight JWTs from trusted providers; verified facts are read as `verified.<provider>.<fact>`. See [Signed context](signed-context.md) |
 | `llm` | object | no | `model`, `confidence` (0–1, default 0), `raw_output` |
 | `intent` | object | no | Intent-resolution details used by the uncertainty score |
 | `shadow_mode` | boolean | no | Evaluate without authorizing (no Passport) |
@@ -95,6 +97,7 @@ The OpenAPI document is served at `/openapi.json`, with interactive docs at `/do
 | `audit_flags` | Machine-readable labels (rule ids, gates, `unauthenticated_caller`…) |
 | `rules_triggered` | Matched rules with their decision and reason |
 | `approval` | For `CONFIRM` and `SUGGEST`: `ticket`, `ticket_id`, `required_role`, `expires_at` |
+| `verified_context` | Providers whose signed context was verified and given to the rules |
 
 ### Errors
 

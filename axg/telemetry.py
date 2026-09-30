@@ -85,6 +85,7 @@ class DecisionObservation:
             "axg.uncertainty.score": response.scores.uncertainty_score,
             "axg.rules.triggered": [rule.id for rule in response.rules_triggered],
             "axg.audit.flags": list(response.audit_flags),
+            "axg.context.verified": list(response.verified_context),
         }
         if response.passport_id:
             attributes["axg.passport.id"] = response.passport_id

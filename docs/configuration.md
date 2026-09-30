@@ -41,6 +41,13 @@ echo "[{\"client_id\":\"support-bot\",\"key_sha256\":\"$HASH\",\"app_ids\":[\"su
 
 Local policies are read from `plugins/` next to the package, which is `/app/plugins` in the image.
 
+### Signed context
+
+| Variable | Default | Description |
+|---|---|---|
+| `AXG_CONTEXT_PROVIDERS` | empty | JSON list of trusted context providers: `[{"id": "ledger", "issuer": "...", "jwks_url": "...", "max_age_seconds": 300}]` (`public_key` in PEM may replace `jwks_url`). See [Signed context](signed-context.md) |
+| `AXG_CONTEXT_AUDIENCE` | `axg` | `aud` that context tokens must carry |
+
 ### Audit
 
 | Variable | Description |
@@ -99,6 +106,7 @@ The repository's [`docker-compose.yml`](../docker-compose.yml) runs the same set
 - [ ] `AXG_AUDIT_FILE` on a persistent volume, with `axg verify-audit` run on a schedule.
 - [ ] Policies mounted read-only, validated in CI with `axg validate-plugin`, and versioned.
 - [ ] Remote policies disabled unless needed, and then allow-listed.
+- [ ] Rules that depend on facts a caller could misreport read [signed context](signed-context.md), and their actions declare `required_context`.
 - [ ] AXG reachable only from your callers (private network or an authenticating proxy with TLS).
 - [ ] An image pinned by `sha-<commit>` or version, not `latest`.
 - [ ] `OTEL_EXPORTER_OTLP_ENDPOINT` set, with alerts on `axg.decisions` by decision and on `ERROR` spans.

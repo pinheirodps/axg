@@ -99,6 +99,7 @@ Each key is an `action_type`. Declare every action your agents may take: undecla
 | `required_permissions` | `[]` | The agent must hold all of them (`agent.permissions`), capped by what its caller may grant. Missing any gives `BLOCK` |
 | `base_risk` | 0.25 | Starting `risk_score` for this action |
 | `approver_role` | plugin default | Role that approves this action when a human must decide |
+| `required_context` | `[]` | [Context providers](signed-context.md) whose verified facts the action needs. Without them, `ALLOW` and `SUGGEST` become `CONFIRM` |
 
 ## Rules
 
@@ -131,7 +132,7 @@ Each condition reads one `field` of the request with a dotted path and compares 
 
 A condition on a missing field never matches (except `exists`). An unknown operator is a validation error, so a typo cannot silently disable a rule.
 
-Readable fields: `execution_id`, `tenant_id`, `app_id`, `plugin_id`, `user_id`, `source`, `action_type`, `shadow_mode`, `agent.id`, `agent.type`, `agent.permissions`, `llm.model`, `llm.confidence`, and anything under `payload.`, `context.`, `intent.` and `metadata.`.
+Readable fields: `execution_id`, `tenant_id`, `app_id`, `plugin_id`, `user_id`, `source`, `action_type`, `shadow_mode`, `agent.id`, `agent.type`, `agent.permissions`, `llm.model`, `llm.confidence`, and anything under `payload.`, `context.`, `intent.` and `metadata.`. Facts from [signed context](signed-context.md) are under `verified.<provider>.`: prefer them over `context.` for anything the caller could misreport.
 
 ## Uncertainty gate
 
