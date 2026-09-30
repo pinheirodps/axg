@@ -47,6 +47,8 @@ PASSPORT_META_KEY = "io.axg/passport"
 PAYLOAD_META_KEY = "io.axg/actionable_payload"
 DECISION_META_KEY = "io.axg/decision"
 APPROVAL_META_KEY = "io.axg/approval"
+# From this MCP protocol version on, results must say resultType; clients of earlier versions reject extra keys
+RESULT_TYPE_SINCE = "2026-07-28"
 
 
 class AxgUnavailable(Exception):
@@ -64,26 +66,26 @@ def _jwt_claims(headers: dict[str, str]) -> dict[str, Any]:
         return {}
 
 
-def build_decision_request(body: dict[str, Any], headers: dict[str, str]) -> dict[str, Any]:
+def build_decision_request(body: dict[str, Any], claims: dict[str, Any], source: str = "agentcore") -> dict[str, Any]:
+    """Map an MCP tools/call and the caller's (already validated) identity claims to an AXG DecisionRequest."""
     params = body.get("params") or {}
-    claims = _jwt_claims(headers)
     app_id = os.environ["AXG_APP_ID"]
     agent_id = claims.get(os.environ.get("AXG_AGENT_CLAIM", "client_id")) or claims.get("sub") or "unknown-agent"
     scopes = claims.get("scope", "")
     permissions = scopes.split() if isinstance(scopes, str) else list(scopes)
     return {
-        "execution_id": f"agentcore-{body.get('id', '')}-{uuid.uuid4()}",
+        "execution_id": f"{source}-{body.get('id', '')}-{uuid.uuid4()}",
         "tenant_id": str(claims.get(os.environ.get("AXG_TENANT_CLAIM", "tenant_id")) or "default"),
         "app_id": app_id,
         "plugin_id": os.environ.get("AXG_PLUGIN_ID", app_id),
         "user_id": claims.get("sub"),
         "agent": {"id": str(agent_id), "type": "agent", "permissions": permissions},
-        "source": "agentcore",
+        "source": source,
         "action_type": params.get("name", ""),
         "payload": params.get("arguments") or {},
         # An explicit tool call is not an LLM guess: policy rules and permissions decide
         "llm": {"confidence": 1.0},
-        "metadata": {"flow": "agentcore:tools/call"},
+        "metadata": {"flow": f"{source}:tools/call"},
     }
 
 
@@ -115,7 +117,9 @@ def _arguments_authorized(arguments: dict[str, Any], authorized: dict[str, Any])
     return all(key in authorized and authorized[key] == value for key, value in arguments.items() if key != "axg")
 
 
-def _approved_call(body: dict[str, Any], params: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+def _approved_call(
+    body: dict[str, Any], params: dict[str, Any], meta: dict[str, Any], protocol_version: str | None = None
+) -> dict[str, Any]:
     """A call that already carries a Passport (for example after a human approval): check it instead of deciding again.
 
     AXG is stateless, so single use is enforced where the Passport is consumed: the MCP tool verifies it with a
@@ -123,7 +127,8 @@ def _approved_call(body: dict[str, Any], params: dict[str, Any], meta: dict[str,
     """
     authorized = meta.get(PAYLOAD_META_KEY)
     if not isinstance(authorized, dict) or not _arguments_authorized(params.get("arguments") or {}, authorized):
-        return _tool_error(body, "Blocked: the arguments differ from what the Passport authorizes.", {"decision": "INVALID_PASSPORT"})
+        return _tool_error(body, "Blocked: the arguments differ from what the Passport authorizes.",
+                           {"decision": "INVALID_PASSPORT"}, protocol_version=protocol_version)
     try:
         result = introspect_passport(meta[PASSPORT_META_KEY], params.get("name") or "", authorized)
     except AxgUnavailable as exc:
@@ -131,17 +136,23 @@ def _approved_call(body: dict[str, Any], params: dict[str, Any], meta: dict[str,
         return _tool_error(
             body, "This action could not be authorized right now (governance service unavailable). Try again later.",
             {"decision": "UNAVAILABLE"},
+            protocol_version=protocol_version,
         )
     if not result.get("active"):
         reason = result.get("reason") or "the Passport is not valid for this call"
-        return _tool_error(body, f"Blocked: {reason}.", {"decision": "INVALID_PASSPORT"})
+        return _tool_error(body, f"Blocked: {reason}.", {"decision": "INVALID_PASSPORT"},
+                           protocol_version=protocol_version)
     logger.info(json.dumps({"event": "axg.agentcore.passport_accepted", "tool": params.get("name"),
                             "jti": (result.get("claims") or {}).get("jti")}))
     return _pass_through(body)
 
 
 def _tool_error(
-    body: dict[str, Any], text: str, axg: dict[str, Any], approval: dict[str, Any] | None = None
+    body: dict[str, Any],
+    text: str,
+    axg: dict[str, Any],
+    approval: dict[str, Any] | None = None,
+    protocol_version: str | None = None,
 ) -> dict[str, Any]:
     """Short-circuit the call with a tool result the agent can read (isError), not a protocol error.
 
@@ -154,6 +165,8 @@ def _tool_error(
     }
     if approval:
         result["_meta"] = {APPROVAL_META_KEY: approval}
+    if protocol_version and protocol_version >= RESULT_TYPE_SINCE:
+        result["resultType"] = "complete"
     return {
         "interceptorOutputVersion": "1.0",
         "mcp": {
@@ -179,12 +192,25 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     if body.get("method") != "tools/call":
         return _pass_through(body)
 
+    headers = gateway_request.get("headers") or {}
+    version = next((v for k, v in headers.items() if k.lower() == "mcp-protocol-version"), None)
+    return govern_tools_call(body, _jwt_claims(headers), protocol_version=version)
+
+
+def govern_tools_call(
+    body: dict[str, Any], claims: dict[str, Any], source: str = "agentcore", protocol_version: str | None = None
+) -> dict[str, Any]:
+    """Decide one MCP tools/call; shared by this interceptor and the AXG MCP gateway.
+
+    Returns the interceptor output: ``transformedGatewayRequest`` (forward, with the Passport in
+    ``params._meta``) or ``transformedGatewayResponse`` (answer the client, tool not called).
+    """
     params = body.get("params") or {}
     meta = params.get("_meta") or {}
     if meta.get(PASSPORT_META_KEY):
-        return _approved_call(body, params, meta)
+        return _approved_call(body, params, meta, protocol_version)
 
-    decision_request = build_decision_request(body, gateway_request.get("headers") or {})
+    decision_request = build_decision_request(body, claims, source)
     try:
         decision = ask_axg(decision_request)
     except AxgUnavailable as exc:
@@ -193,6 +219,7 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
             body,
             "This action could not be authorized right now (governance service unavailable). Try again later.",
             {"decision": "UNAVAILABLE", "execution_id": decision_request["execution_id"]},
+            protocol_version=protocol_version,
         )
 
     verdict = decision.get("decision")
@@ -209,7 +236,8 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
         approval = decision.get("approval")
         if approval:
             approval = {**approval, "actionable_payload": decision.get("actionable_payload") or {}}
-        return _tool_error(body, f"{prefix}: {decision.get('reason') or 'no reason given'}", summary, approval)
+        return _tool_error(body, f"{prefix}: {decision.get('reason') or 'no reason given'}", summary, approval,
+                           protocol_version)
 
     params = dict(body.get("params") or {})
     params["_meta"] = {
