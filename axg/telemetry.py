@@ -172,6 +172,17 @@ def observe_approval(caller: Caller) -> Iterator[dict[str, Any]]:
 
 
 @contextmanager
+def observe_introspection(caller: Caller) -> Iterator[dict[str, Any]]:
+    """Span ``axg.introspect``; the caller sets ``axg.introspection.active`` in the yielded dict."""
+    outcome: dict[str, Any] = {"axg.introspection.active": False}
+    with _tracer.start_as_current_span("axg.introspect", attributes={"axg.client.id": caller.client_id}) as span:
+        try:
+            yield outcome
+        finally:
+            span.set_attributes(outcome)
+
+
+@contextmanager
 def continue_trace(carrier: Mapping[str, str]) -> Iterator[None]:
     """Join the caller's W3C trace (``traceparent``/``tracestate`` in ``carrier``).
 

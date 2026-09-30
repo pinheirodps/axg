@@ -6,6 +6,7 @@
 Agent ──MCP tools/call──► AgentCore Gateway
                             1. REQUEST interceptor (this Lambda) ──► AXG /v1/decisions
                                  ALLOW   → continue; Passport + authorized payload in params._meta
+                                 call already carrying a Passport → AXG /v1/passports/introspect → continue if active
                                  CONFIRM / SUGGEST / BLOCK / AXG down → tool result isError (tool not called)
                             2. Cedar policy (runs after the interceptor)
                             3. MCP tool verifies the Passport, then acts
@@ -78,9 +79,7 @@ Rules may add fields to the authorized payload, but they may never differ from t
 
 ## Confirmations and approvals
 
-For `CONFIRM` and `SUGGEST`, the tool result carries `_meta["io.axg/approval"]`: AXG's approval ticket, `required_role`, `expires_at` and the `actionable_payload`. `_meta` is host metadata, not content the model reads. The host application stores it, asks the right person, and exchanges the ticket for a Passport (`submit_approval` / `submitApproval` in the SDKs). The host then runs the approved action through its own trusted path, with the Passport and payload for the tool to verify as above. See [Human approvals](../../docs/approvals.md).
-
-Repeating the call through the gateway is not supported yet: the interceptor asks AXG again, and AXG answers `CONFIRM` again. Accepting an approved Passport at the gateway needs Passport introspection, which is planned with the MCP gateway mode.
+For `CONFIRM` and `SUGGEST`, the tool result carries `_meta["io.axg/approval"]`: AXG's approval ticket, `required_role`, `expires_at` and the `actionable_payload`. `_meta` is host metadata, not content the model reads. The host application stores it, asks the right person, and exchanges the ticket for a Passport (`submit_approval` / `submitApproval` in the SDKs). The agent then repeats the call with the Passport and the authorized payload in `params._meta`. The interceptor does not decide again: it checks the Passport with AXG's [introspection](../../docs/passport.md#introspection), requires every argument to match the authorized payload, and lets the call through unchanged. The tool verifies the Passport with a replay cache, which makes the approval single use. See [Human approvals](../../docs/approvals.md).
 
 ## Optional Cedar defense in depth
 

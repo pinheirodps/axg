@@ -123,6 +123,16 @@ claims = verify_mcp_tool_call(
 
 Node: `verifyMcpToolCall(meta, toolName, args, options, jwksUrl)`. The [AgentCore interceptor](../integrations/agentcore) is a ready-made producer of these fields.
 
+## Introspection
+
+Components that cannot verify RS256 themselves, such as a gateway running with only the standard library, can ask AXG instead, in the style of OAuth token introspection (RFC 7662):
+
+```bash
+curl -s https://axg.example.com/v1/passports/introspect -H "Authorization: Bearer $KEY"   -H "Content-Type: application/json"   -d '{"passport": "<jwt>", "action_type": "create_expense", "actionable_payload": {"amount": 10}}'
+```
+
+The answer is `{"active": true, "claims": {...}}` for an unexpired `ALLOW` Passport issued by this AXG and, when given, for that action and payload. Otherwise it is `{"active": false, "reason": "..."}`. A caller never learns anything about Passports for apps it may not act for: `active` is `false` with no reason. Introspection does **not** consume the Passport. AXG is stateless, so single use is enforced where the Passport is consumed, with a replay cache.
+
 ## Key management
 
 - **Production** requires `AXG_PRIVATE_KEY`, an RSA key in PEM (`\n` escapes accepted). With `AXG_ENV=production`, AXG refuses to start without it. Elsewhere it generates an ephemeral key and warns.

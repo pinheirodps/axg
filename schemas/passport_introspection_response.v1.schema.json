@@ -1,0 +1,48 @@
+{
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/passport_introspection_response.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "``active`` is true only for an unexpired ALLOW Passport issued by this AXG and matching the request.\n\nSingle use is not tracked here (AXG is stateless): executors enforce it with a replay cache.",
+  "properties": {
+    "active": {
+      "title": "Active",
+      "type": "boolean"
+    },
+    "claims": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The Passport claims, when active",
+      "title": "Claims"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Why the Passport is not active, when it is safe to say",
+      "title": "Reason"
+    },
+    "schema_version": {
+      "default": "axg.passport_introspection_response.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "active"
+  ],
+  "title": "IntrospectionResponse",
+  "type": "object"
+}

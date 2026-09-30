@@ -5,6 +5,7 @@
 | Method and path | Auth | Purpose |
 |---|---|---|
 | `POST /v1/decisions` | `Authorization: Bearer <api key>` | Evaluate a proposed action |
+| `POST /v1/passports/introspect` | `Authorization: Bearer <api key>` | Is a Passport valid for an action and payload? ([Introspection](passport.md#introspection)) |
 | `POST /v1/approvals` | `Authorization: Bearer <api key>` with `approvals:approve` | Exchange an approved ticket for a Passport, or record a denial ([Human approvals](approvals.md)) |
 | `GET /.well-known/jwks.json` | none | Current and retired public keys (JWKS) for Passport verification |
 | `GET /v1/certs` | none | Current public key in PEM, with `kid` (legacy; prefer the JWKS) |
@@ -121,6 +122,7 @@ The contracts are published as JSON Schema (draft 2020-12) in [`schemas/`](../sc
 | `approval_ticket_claims.v1` | Claims of an approval ticket |
 | `approval_request.v1`, `approval_response.v1` | Request and response of `POST /v1/approvals` |
 | `approval_record.v1` | Audit record of an approval or denial |
+| `passport_introspection_request.v1`, `passport_introspection_response.v1` | `POST /v1/passports/introspect` |
 | `execution_record.v1` | Superseded audit record, kept for existing consumers |
 
 They are generated from the models (`python -m axg.schemas`), and CI fails when a committed schema drifts from its model. A contract change bumps its version and is listed in the [changelog](../CHANGELOG.md).

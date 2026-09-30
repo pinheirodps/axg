@@ -1,0 +1,48 @@
+{
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/passport_introspection_request.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Ask AXG whether a Passport is valid, optionally for one action and one payload (RFC 7662-style).",
+  "properties": {
+    "action_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "If set, the Passport must be for this action",
+      "title": "Action Type"
+    },
+    "actionable_payload": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "If set, the Passport's payload_hash must match this payload",
+      "title": "Actionable Payload"
+    },
+    "passport": {
+      "title": "Passport",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "axg.passport_introspection_request.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "passport"
+  ],
+  "title": "IntrospectionRequest",
+  "type": "object"
+}
