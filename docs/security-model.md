@@ -36,6 +36,7 @@ flowchart LR
 | A caller requests decisions for someone else's app | `app_ids` per caller; `403` otherwise |
 | A broken or missing policy lets actions through | Fail-safe `CONFIRM`; unknown rule operators fail validation |
 | A malicious remote policy or SSRF through policy loading | Remote policies off by default; HTTPS, exact allow-list, public IPs only, pinned DNS, no redirects |
+| An approval is replayed, forged, reused for another payload or granted by the agent itself | Signed tickets bound to the payload hash and policy version; required role, end-user binding and no self-approval; Passport `jti` = ticket id |
 | Audit records are edited or deleted | Hash-chained audit file, `axg verify-audit` |
 | Key compromise or rotation | JWKS with `kid`, retired keys kept during rotation |
 | Resource exhaustion | Body size limit and per-caller rate limit |
@@ -44,7 +45,7 @@ flowchart LR
 
 - **It does not execute actions.** Enforcement depends on executors verifying Passports. An executor that skips verification is outside AXG's protection.
 - **It does not judge facts it is not given.** Rules see the request, including `context`. If a decision needs account history or limits, the caller must supply them, and AXG trusts that the caller reports them truthfully. Signed context from trusted providers is on the roadmap.
-- **`CONFIRM` is a verdict, not a workflow.** The caller must obtain the human's confirmation and must not execute without it. A signed approvals flow is on the roadmap.
+- **AXG does not run the approval queue or authenticate humans.** `CONFIRM` and `SUGGEST` carry a signed ticket, and AXG checks the approver's role, the payload and the policy before issuing a Passport. The application stores tickets, authenticates the approver and asserts their role (see [Human approvals](approvals.md)).
 - **It does not replace transport security.** Run AXG on a private network or behind TLS. API keys are bearer credentials.
 
 ## Operational guidance

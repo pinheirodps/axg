@@ -8,11 +8,12 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Re
 
 from axg.auth import ANONYMOUS, Caller, authenticate, auth_mode
 from axg.engine import DecisionEngine
-from axg.models import DecisionRequest, DecisionResponse
+from axg.approvals import ApprovalRejected, ApprovalService
+from axg.models import ApprovalRequest, ApprovalResponse, DecisionRequest, DecisionResponse
 from axg.audit import audit_manager
 from axg.crypto import get_public_key, get_jwks, key_manager
 from axg.limits import BodySizeLimitMiddleware, rate_limiter
-from axg.telemetry import AXG_VERSION, configure_from_env, continue_trace
+from axg.telemetry import AXG_VERSION, configure_from_env, continue_trace, observe_approval
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("uvicorn.error")
@@ -26,6 +27,7 @@ app = FastAPI(
 app.add_middleware(BodySizeLimitMiddleware)
 
 engine = DecisionEngine()
+approvals = ApprovalService(engine.loader)
 
 @app.get("/health")
 async def health_check() -> dict[str, str]:
@@ -126,3 +128,33 @@ async def create_decision(
         )
     )
     return response
+
+
+@app.post("/v1/approvals", response_model=ApprovalResponse)
+async def submit_approval(
+    request: ApprovalRequest,
+    http_request: Request,
+    background_tasks: BackgroundTasks,
+    caller: Annotated[Caller, Depends(resolve_caller)],
+) -> ApprovalResponse:
+    """Exchange an approved ticket for a Passport, or record a denial (AXG keeps no state)."""
+    retry_after = rate_limiter.check(caller.client_id)
+    if retry_after is not None:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded", headers={"Retry-After": str(retry_after)})
+
+    with continue_trace(http_request.headers), observe_approval(caller) as outcome:
+        try:
+            response, record = await approvals.submit(request, caller)
+        except ApprovalRejected as exc:
+            outcome["axg.approval.rejection"] = exc.detail
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        outcome.update({
+            "axg.approval.outcome": response.outcome,
+            "axg.approval.ticket_id": record.ticket_id,
+            "axg.approval.role": record.approver_role,
+            "axg.policy": record.policy,
+            "axg.action.type": record.action_type,
+        })
+    background_tasks.add_task(audit_manager.record_decision, record.model_dump(mode="json"))
+    return response
+

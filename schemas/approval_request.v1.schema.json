@@ -1,0 +1,63 @@
+{
+  "$defs": {
+    "ApproverIdentity": {
+      "properties": {
+        "id": {
+          "description": "The human who decided, as authenticated by the application",
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "minLength": 1,
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role"
+      ],
+      "title": "ApproverIdentity",
+      "type": "object"
+    }
+  },
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/approval_request.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actionable_payload": {
+      "additionalProperties": true,
+      "description": "Exactly the payload shown to the approver",
+      "title": "Actionable Payload",
+      "type": "object"
+    },
+    "approver": {
+      "$ref": "#/$defs/ApproverIdentity"
+    },
+    "outcome": {
+      "default": "approve",
+      "enum": [
+        "approve",
+        "deny"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "axg.approval_request.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "ticket": {
+      "title": "Ticket",
+      "type": "string"
+    }
+  },
+  "required": [
+    "ticket",
+    "actionable_payload",
+    "approver"
+  ],
+  "title": "ApprovalRequest",
+  "type": "object"
+}

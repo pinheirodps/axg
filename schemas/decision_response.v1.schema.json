@@ -1,5 +1,36 @@
 {
   "$defs": {
+    "ApprovalChallenge": {
+      "description": "Returned with CONFIRM and SUGGEST: what the approver's side needs to store and show.",
+      "properties": {
+        "expires_at": {
+          "description": "Unix time after which the ticket is rejected",
+          "title": "Expires At",
+          "type": "integer"
+        },
+        "required_role": {
+          "title": "Required Role",
+          "type": "string"
+        },
+        "ticket": {
+          "description": "Signed approval ticket (JWT); exchange it at POST /v1/approvals",
+          "title": "Ticket",
+          "type": "string"
+        },
+        "ticket_id": {
+          "title": "Ticket Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "ticket_id",
+        "required_role",
+        "expires_at"
+      ],
+      "title": "ApprovalChallenge",
+      "type": "object"
+    },
     "Decision": {
       "enum": [
         "ALLOW",
@@ -81,6 +112,18 @@
       "additionalProperties": true,
       "title": "Actionable Payload",
       "type": "object"
+    },
+    "approval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApprovalChallenge"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "For CONFIRM and SUGGEST: a signed ticket that a human approver exchanges for a Passport"
     },
     "audit_flags": {
       "items": {

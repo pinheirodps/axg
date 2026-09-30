@@ -15,12 +15,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from axg.canonical import canonical_hash
-from axg.models import PassportClaimsV2
+from axg.models import ApprovalChallenge, ApprovalTicketClaims, PassportApproval, PassportClaimsV2
 
 logger = logging.getLogger(__name__)
 
 PASSPORT_VERSION = 2
 ISSUER = "axg-engine"
+# JOSE typ of approval tickets: they must never be mistaken for a Passport
+APPROVAL_TICKET_TYP = "axg-approval+jwt"
 
 
 class KeyConfigError(RuntimeError):
@@ -139,6 +141,13 @@ class KeyManager:
             raise ValueError("AXG_PREVIOUS_PUBLIC_KEYS must be a JSON list of PEM strings")
         return [k.replace("\\n", "\n") for k in keys]
 
+    def verification_key(self, kid: str | None) -> str | None:
+        """Public key (PEM) of a key this AXG signs or signed with, selected by its RFC 7638 kid."""
+        for pem in (self.public_key, *self._previous_public_keys()):
+            if _rsa_jwk(pem)["kid"] == kid:
+                return pem
+        return None
+
     def get_jwks(self) -> Dict[str, Any]:
         """Returns the current and retired public keys in JSON Web Key Set format."""
         try:
@@ -178,10 +187,16 @@ def sign_decision(
     client_id: str,
     policy: str,
     expires_in_minutes: int = 5,
+    jti: str | None = None,
+    approval: PassportApproval | None = None,
 ) -> tuple[str, str]:
-    """Issue a Passport v2 (RS256 JWT). Returns (token, jti)."""
+    """Issue a Passport v2 (RS256 JWT). Returns (token, jti).
+
+    ``jti`` is fixed for Passports produced by an approval ticket (the ticket id), so one ticket
+    can never yield two usable Passports: verifiers' replay caches reject the second.
+    """
     now = datetime.now(timezone.utc)
-    jti = str(uuid.uuid4())
+    jti = jti or str(uuid.uuid4())
 
     claims = PassportClaimsV2(
         iss=ISSUER,
@@ -198,7 +213,8 @@ def sign_decision(
         action_type=action_type,
         policy=policy,
         payload_hash=hash_payload(actionable_payload),
-    ).model_dump()
+        approval=approval,
+    ).model_dump(exclude_none=True)
 
     try:
         token = jwt.encode(
@@ -211,3 +227,73 @@ def sign_decision(
     except Exception as e:
         logger.error(f"Failed to sign decision token: {e}")
         raise ValueError("Could not generate cryptographic decision token") from e
+
+
+class ApprovalTicketError(ValueError):
+    """The approval ticket is not one this AXG issued, or it is no longer valid."""
+
+
+def sign_approval_ticket(
+    *,
+    execution_id: str,
+    app_id: str,
+    tenant_id: str,
+    plugin_id: str,
+    policy: str,
+    decision: str,
+    action_type: str,
+    actionable_payload: dict[str, Any],
+    client_id: str,
+    required_role: str,
+    user_id: str | None,
+    agent_id: str | None,
+    ttl_seconds: int,
+) -> ApprovalChallenge:
+    """Sign an approval ticket for a CONFIRM or SUGGEST decision (stateless: everything is in the token)."""
+    now = datetime.now(timezone.utc)
+    claims = ApprovalTicketClaims(
+        sub=execution_id,
+        aud=app_id,
+        azp=client_id,
+        iat=int(now.timestamp()),
+        nbf=int(now.timestamp()),
+        exp=int((now + timedelta(seconds=ttl_seconds)).timestamp()),
+        jti=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        plugin_id=plugin_id,
+        policy=policy,
+        decision=decision,
+        action_type=action_type,
+        payload_hash=hash_payload(actionable_payload),
+        required_role=required_role,
+        user_id=user_id,
+        agent_id=agent_id,
+    )
+    token = jwt.encode(
+        claims.model_dump(exclude_none=True),
+        key_manager.private_key,
+        algorithm="RS256",
+        headers={"kid": key_manager.kid, "typ": APPROVAL_TICKET_TYP},
+    )
+    return ApprovalChallenge(ticket=token, ticket_id=claims.jti, required_role=required_role, expires_at=claims.exp)
+
+
+def verify_approval_ticket(token: str) -> ApprovalTicketClaims:
+    """Check that AXG issued this ticket (current or retired key) and that it is still valid."""
+    try:
+        header = jwt.get_unverified_header(token)
+        if header.get("typ") != APPROVAL_TICKET_TYP:
+            raise ApprovalTicketError("Not an approval ticket")
+        key = key_manager.verification_key(header.get("kid"))
+        if key is None:
+            raise ApprovalTicketError("Unknown signing key")
+        claims = jwt.decode(
+            token, key, algorithms=["RS256"], issuer=ISSUER,
+            options={"require": ["exp", "nbf", "jti"], "verify_aud": False},
+        )
+        return ApprovalTicketClaims.model_validate(claims)
+    except ApprovalTicketError:
+        raise
+    except Exception as exc:
+        raise ApprovalTicketError("Invalid or expired approval ticket") from exc
+

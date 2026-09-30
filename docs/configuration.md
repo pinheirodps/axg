@@ -22,7 +22,7 @@ Each `AXG_CLIENTS` entry:
 | `client_id` | Name of the caller. It appears in Passports (`azp`), logs, traces and metrics |
 | `key_sha256` | SHA-256 (hex) of the caller's API key. AXG never stores the key itself |
 | `app_ids` | Apps the caller may request decisions for (`*` for any). Anything else gets `403` |
-| `permissions` | Ceiling on the agent permissions this caller may grant (`*` for any). Permissions beyond it are ignored. Omitted means none |
+| `permissions` | Ceiling on the agent permissions this caller may grant (`*` for any). Permissions beyond it are ignored. Omitted means none. Include `approvals:approve` for callers that submit [human approvals](approvals.md) |
 
 Create a key and its entry:
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from axg.models import (
     DECISION_PRECEDENCE,
+    ApprovalChallenge,
     Decision,
     DecisionRequest,
     DecisionResponse,
@@ -20,7 +21,7 @@ from axg.models import (
 from axg.auth import TRUSTED_LOCAL, Caller
 from axg.plugin_loader import PluginLoader, PluginLoadError
 from axg.rules import RuleEngine
-from axg.crypto import sign_decision, hash_payload
+from axg.crypto import hash_payload, sign_approval_ticket, sign_decision
 from axg.telemetry import current_trace_id, observe_decision
 
 logger = logging.getLogger(__name__)
@@ -92,10 +93,22 @@ class DecisionEngine:
                 decision = Decision.CONFIRM
                 reason = "AXG could not issue a passport. Confirmation is required before execution."
 
+        approval = None
+        # A human can turn CONFIRM/SUGGEST into a Passport, but never for anonymous or shadow requests,
+        # nor when AXG could not sign (the same key signs the ticket)
+        if (
+            decision in (Decision.CONFIRM, Decision.SUGGEST)
+            and caller.authenticated
+            and not request.shadow_mode
+            and "passport_signing_failed" not in audit_flags
+        ):
+            approval = self._approval_challenge(plugin, request, triggered_rules, decision, actionable_payload, caller)
+
         response = DecisionResponse(
             execution_id=request.execution_id,
             plugin_version=plugin.version_label,
             decision=decision,
+            approval=approval,
             passport=passport,
             passport_id=passport_id,
             scores=scores,
@@ -111,6 +124,43 @@ class DecisionEngine:
         )
         logger.info(json.dumps(self.get_decision_log(request, response), sort_keys=True))
         return response
+
+    def _approval_challenge(
+        self,
+        plugin: Plugin,
+        request: DecisionRequest,
+        triggered_rules: list[PolicyRule],
+        decision: Decision,
+        actionable_payload: dict[str, Any],
+        caller: Caller,
+    ) -> ApprovalChallenge | None:
+        try:
+            return sign_approval_ticket(
+                execution_id=request.execution_id,
+                app_id=request.app_id,
+                tenant_id=request.tenant_id,
+                plugin_id=request.plugin_id,
+                policy=plugin.version_label,
+                decision=decision.value,
+                action_type=request.action_type,
+                actionable_payload=actionable_payload,
+                client_id=caller.client_id,
+                required_role=self._approver_role(plugin, request, triggered_rules),
+                user_id=request.user_id,
+                agent_id=request.agent.id if request.agent else None,
+                ttl_seconds=plugin.approval.ticket_ttl_seconds,
+            )
+        except Exception as exc:
+            logger.error("AXG failed to sign an approval ticket: %s", exc)
+            return None
+
+    def _approver_role(self, plugin: Plugin, request: DecisionRequest, triggered_rules: list[PolicyRule]) -> str:
+        """The strictest matched rule that names a role wins, then the action, then the plugin default."""
+        for rule in sorted(triggered_rules, key=lambda r: DECISION_PRECEDENCE[r.decision], reverse=True):
+            if rule.approver_role:
+                return rule.approver_role
+        action = plugin.actions.get(request.action_type)
+        return (action.approver_role if action else None) or plugin.approval.default_role
 
     def _final_decision(
         self,

@@ -14,7 +14,17 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from axg.models import DecisionRequest, DecisionResponse, ExecutionRecord, PassportClaimsV2, Plugin
+from axg.models import (
+    ApprovalRecord,
+    ApprovalRequest,
+    ApprovalResponse,
+    ApprovalTicketClaims,
+    DecisionRequest,
+    DecisionResponse,
+    ExecutionRecord,
+    PassportClaimsV2,
+    Plugin,
+)
 
 SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"
 BASE_ID = "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas"
@@ -25,6 +35,10 @@ CONTRACTS: dict[str, type[BaseModel]] = {
     "execution_record.v2": ExecutionRecord,
     "passport_claims.v2": PassportClaimsV2,
     "plugin_manifest.v1": Plugin,
+    "approval_ticket_claims.v1": ApprovalTicketClaims,
+    "approval_request.v1": ApprovalRequest,
+    "approval_response.v1": ApprovalResponse,
+    "approval_record.v1": ApprovalRecord,
 }
 
 

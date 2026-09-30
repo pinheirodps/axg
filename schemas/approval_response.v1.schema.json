@@ -1,0 +1,58 @@
+{
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/approval_response.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "actionable_payload": {
+      "additionalProperties": true,
+      "title": "Actionable Payload",
+      "type": "object"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "approved",
+        "denied"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "passport": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Passport"
+    },
+    "passport_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Passport Id"
+    },
+    "schema_version": {
+      "default": "axg.approval_response.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "execution_id",
+    "outcome"
+  ],
+  "title": "ApprovalResponse",
+  "type": "object"
+}

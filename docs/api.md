@@ -5,6 +5,7 @@
 | Method and path | Auth | Purpose |
 |---|---|---|
 | `POST /v1/decisions` | `Authorization: Bearer <api key>` | Evaluate a proposed action |
+| `POST /v1/approvals` | `Authorization: Bearer <api key>` with `approvals:approve` | Exchange an approved ticket for a Passport, or record a denial ([Human approvals](approvals.md)) |
 | `GET /.well-known/jwks.json` | none | Current and retired public keys (JWKS) for Passport verification |
 | `GET /v1/certs` | none | Current public key in PEM, with `kid` (legacy; prefer the JWKS) |
 | `POST /v1/plugins/reload` | `Authorization: Bearer <AXG_ADMIN_TOKEN>` | Drop cached policies so the next request reloads them |
@@ -92,6 +93,7 @@ The OpenAPI document is served at `/openapi.json`, with interactive docs at `/do
 | `reason` | Human-readable explanation, safe to show to users |
 | `audit_flags` | Machine-readable labels (rule ids, gates, `unauthenticated_caller`…) |
 | `rules_triggered` | Matched rules with their decision and reason |
+| `approval` | For `CONFIRM` and `SUGGEST`: `ticket`, `ticket_id`, `required_role`, `expires_at` |
 
 ### Errors
 
@@ -116,6 +118,9 @@ The contracts are published as JSON Schema (draft 2020-12) in [`schemas/`](../sc
 | `passport_claims.v2` | Claims of the Passport JWT |
 | `execution_record.v2` | Audit record written by the audit sinks |
 | `plugin_manifest.v1` | Policy file (`rules.json`) |
+| `approval_ticket_claims.v1` | Claims of an approval ticket |
+| `approval_request.v1`, `approval_response.v1` | Request and response of `POST /v1/approvals` |
+| `approval_record.v1` | Audit record of an approval or denial |
 | `execution_record.v1` | Superseded audit record, kept for existing consumers |
 
 They are generated from the models (`python -m axg.schemas`), and CI fails when a committed schema drifts from its model. A contract change bumps its version and is listed in the [changelog](../CHANGELOG.md).

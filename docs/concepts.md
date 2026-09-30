@@ -51,6 +51,7 @@ flowchart TD
 5. **Thresholds.** With no rule or permission outcome, `llm.confidence` decides: at or above `allow_min_confidence` gives `ALLOW`, at or above `suggest_min_confidence` gives `SUGGEST`, otherwise `CONFIRM`.
 6. **Caller check.** An `ALLOW` requested by an unauthenticated caller becomes `CONFIRM` (`unauthenticated_caller`).
 7. **Passport.** An `ALLOW` outside shadow mode is signed. If signing fails, the decision becomes `CONFIRM` (`passport_signing_failed`).
+8. **Approval ticket.** A `CONFIRM` or `SUGGEST` for an authenticated caller outside shadow mode carries a signed ticket naming the role that must approve. An approved ticket is exchanged for a Passport (see [Human approvals](approvals.md)).
 
 ## Scores
 

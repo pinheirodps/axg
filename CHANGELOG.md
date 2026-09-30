@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Stateless human approvals. `CONFIRM` and `SUGGEST` decisions for authenticated callers carry an approval ticket (signed JWT, `typ: axg-approval+jwt`) bound to the payload hash, policy version, required role, end user and agent. `POST /v1/approvals` exchanges an approved ticket for a Passport (`jti` = ticket id, `approval` claim) or records a denial. The caller needs `approvals:approve`. The approver must hold the required role, must be the original user for `end_user` tickets, and can never be the agent. A changed policy or payload needs a fresh decision. Policies declare roles with `approval.default_role`, `actions.<action>.approver_role` and `rules[].approver_role`. Approvals and denials are audited (`approval_record.v1`) and traced (`axg.approve`, `axg.approvals`). New schemas: `approval_ticket_claims.v1`, `approval_request.v1`, `approval_response.v1`, `approval_record.v1`.
+
 ## 0.3.0 (2026-09-30)
 
 Upgrade notes: audit consumers read `axg.execution_record.v2`; `AXG_CLIENTS` entries must declare `permissions` explicitly; validate your policies with `axg validate-plugin` (unknown rule operators are now rejected).

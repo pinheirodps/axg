@@ -1,4 +1,30 @@
 {
+  "$defs": {
+    "PassportApproval": {
+      "additionalProperties": false,
+      "properties": {
+        "approver_id": {
+          "title": "Approver Id",
+          "type": "string"
+        },
+        "approver_role": {
+          "title": "Approver Role",
+          "type": "string"
+        },
+        "ticket_id": {
+          "title": "Ticket Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket_id",
+        "approver_id",
+        "approver_role"
+      ],
+      "title": "PassportApproval",
+      "type": "object"
+    }
+  },
   "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/passport_claims.v2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -7,6 +33,18 @@
     "action_type": {
       "title": "Action Type",
       "type": "string"
+    },
+    "approval": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PassportApproval"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Present when a human approved a CONFIRM or SUGGEST decision"
     },
     "aud": {
       "description": "app_id the action is authorized for",
