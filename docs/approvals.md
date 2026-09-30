@@ -88,6 +88,61 @@ Both approvals and denials are written to the audit sinks as [`approval_record.v
 
 A ticket can be submitted more than once, but every Passport it produces has the same `jti`: the ticket id. Executors that verify Passports with a replay cache (`replay_cache` / `replayCache` in the SDKs) accept the first and reject the rest, so one approval authorizes one execution.
 
+## Where the queue lives
+
+Any system that can store a row can run the approval side. Pick the place your agents already keep state:
+
+| Setup | Where the ticket lives |
+|---|---|
+| Your own backend | A table keyed by `ticket_id` with the ticket, payload, required role, expiry and status. [`examples/approvals/sqlite_approval_queue.py`](../examples/approvals/sqlite_approval_queue.py) is a complete, tested example |
+| An orchestrator such as MUAI | Its approval queue, shared by every application it serves |
+| LangGraph | The graph state: interrupt the tool node with the ticket and resume with the human's answer (sketch below) |
+| MCP through the [AgentCore interceptor](../integrations/agentcore) | The blocked tool result carries `_meta["io.axg/approval"]` (ticket, required role, expiry, payload) for the host application, outside the content the model reads. The host runs the approved action through its own trusted path |
+| Microsoft Agent Governance Toolkit | `AxgDecisionSink.ApprovalTicket`, `ApprovalTicketId`, `ApprovalRequiredRole`, `ApprovalExpiresAt` ([.NET backend](../integrations/agt-dotnet)) |
+| Claude Code | Nothing to store: the [hook](../integrations/claude_code) turns `CONFIRM` into `ask`, and Claude Code asks the user before the tool runs |
+
+Exchange the ticket with the SDKs:
+
+```python
+from axg_python_sdk import AxgApprovalError, submit_approval
+
+result = submit_approval(AXG_URL, AXG_API_KEY, ticket=row.ticket, actionable_payload=row.payload,
+                         approver_id=user.id, approver_role=user.role)   # outcome="deny" to refuse
+execute(result["actionable_payload"], passport=result["passport"])
+```
+
+```ts
+import { submitApproval } from 'axg-node-sdk';
+
+const result = await submitApproval(AXG_URL, AXG_API_KEY, {
+  ticket: row.ticket, actionablePayload: row.payload, approver: { id: user.id, role: user.role },
+});
+```
+
+Both raise `AxgApprovalError` with AXG's status code (`statusCode` in Node, `status_code` in Python).
+
+A LangGraph sketch (illustrative; adapt to your graph):
+
+```python
+from langgraph.types import Command, interrupt
+
+def tool_node(state):
+    decision = axg_decide(state["proposed_call"])
+    if decision["decision"] in ("CONFIRM", "SUGGEST"):
+        answer = interrupt({"approval": decision["approval"], "payload": decision["actionable_payload"]})
+        result = submit_approval(AXG_URL, AXG_API_KEY, ticket=decision["approval"]["ticket"],
+                                 actionable_payload=decision["actionable_payload"],
+                                 approver_id=answer["approver_id"], approver_role=answer["approver_role"],
+                                 outcome="approve" if answer["approved"] else "deny")
+        if result["outcome"] != "approved":
+            return {"messages": ["The user declined this action."]}
+        return run_tool(result["actionable_payload"], passport=result["passport"])
+    ...
+
+# Later, when the human answers in your UI:
+graph.invoke(Command(resume={"approved": True, "approver_id": "ana", "approver_role": "end_user"}), config)
+```
+
 ## Checklist for the approver's side
 
 - [ ] Store the ticket with the actionable payload, keyed by `ticket_id`; expire entries at `expires_at`.

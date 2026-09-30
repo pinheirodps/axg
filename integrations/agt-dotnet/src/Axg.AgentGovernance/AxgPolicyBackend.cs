@@ -63,6 +63,14 @@ public sealed class AxgDecisionSink
     public string? ActionablePayloadJson { get; internal set; }
     public string? RiskLevel { get; internal set; }
 
+    /// <summary>For CONFIRM/SUGGEST: AXG's signed approval ticket. Store it with <see cref="ActionablePayloadJson"/>,
+    /// show the payload to someone with <see cref="ApprovalRequiredRole"/>, then exchange it at POST /v1/approvals.</summary>
+    public string? ApprovalTicket { get; internal set; }
+    public string? ApprovalTicketId { get; internal set; }
+    public string? ApprovalRequiredRole { get; internal set; }
+    /// <summary>Unix time after which AXG rejects the ticket.</summary>
+    public long? ApprovalExpiresAt { get; internal set; }
+
     /// <summary>Adds a new sink to <paramref name="context"/> and returns it.</summary>
     public static AxgDecisionSink Attach(IDictionary<string, object> context)
     {
@@ -152,6 +160,10 @@ public sealed class AxgPolicyBackend : IExternalPolicyBackend, IDisposable
             sink.PassportId = Text("passport_id");
             sink.ActionablePayloadJson = Text("actionable_payload");
             sink.RiskLevel = Text("risk_level");
+            sink.ApprovalTicket = Text("approval_ticket");
+            sink.ApprovalTicketId = Text("approval_ticket_id");
+            sink.ApprovalRequiredRole = Text("approval_required_role");
+            sink.ApprovalExpiresAt = meta.TryGetValue("approval_expires_at", out var e) && e is long expires && expires > 0 ? expires : null;
         }
         return result;
     }
@@ -219,6 +231,10 @@ public sealed class AxgPolicyBackend : IExternalPolicyBackend, IDisposable
                 ["passport_id"] = node?["passport_id"]?.GetValue<string>() ?? string.Empty,
                 ["actionable_payload"] = node?["actionable_payload"]?.ToJsonString() ?? "{}",
                 ["risk_level"] = node?["scores"]?["risk_level"]?.GetValue<string>() ?? string.Empty,
+                ["approval_ticket"] = node?["approval"]?["ticket"]?.GetValue<string>() ?? string.Empty,
+                ["approval_ticket_id"] = node?["approval"]?["ticket_id"]?.GetValue<string>() ?? string.Empty,
+                ["approval_required_role"] = node?["approval"]?["required_role"]?.GetValue<string>() ?? string.Empty,
+                ["approval_expires_at"] = node?["approval"]?["expires_at"]?.GetValue<long>() ?? 0L,
             },
         };
     }
