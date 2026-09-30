@@ -111,6 +111,7 @@ Install the current release with `pip install "axg @ git+https://github.com/pinh
 |---|---|
 | Any language or framework | HTTP API, plus the [Python](sdks/axg-python-sdk) and [Node](sdks/axg-node-sdk) SDKs to verify Passports |
 | MCP servers and tools | `verify_mcp_tool_call` / `verifyMcpToolCall`: a tool checks that AXG authorized exactly the call it received |
+| Any MCP server (Streamable HTTP) | [MCP gateway](integrations/mcp_gateway): a proxy that decides every `tools/call`, including human approvals |
 | AWS Bedrock AgentCore Gateway | [REQUEST interceptor](integrations/agentcore) (Lambda) that decides before Cedar |
 | Microsoft Agent Governance Toolkit | [`IExternalPolicyBackend`](integrations/agt-dotnet) for .NET |
 | Claude Code | [`PreToolUse` hook](integrations/claude_code) with a policy for shell and file tools |

@@ -10,6 +10,8 @@ ENV PORT=8090
 COPY pyproject.toml README.md ./
 COPY axg ./axg
 COPY plugins ./plugins
+# The MCP gateway runs from this image: uvicorn integrations.mcp_gateway.axg_mcp_gateway:app
+COPY integrations ./integrations
 
 # [otel]: OTLP export, enabled only when OTEL_EXPORTER_OTLP_ENDPOINT is set.
 # /var/lib/axg holds the audit log (AXG_AUDIT_FILE); a volume mounted there inherits the axg owner.
