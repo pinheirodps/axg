@@ -10,6 +10,8 @@ Deploy as the gateway's REQUEST interceptor (Lambda, Python 3.12, standard libra
   tool result with ``isError: true`` and the reason, so it can ask the user to confirm (fail closed).
   For SUGGEST / CONFIRM the result's ``_meta["io.axg/approval"]`` carries AXG's approval ticket and
   the payload, for the host application to run the approval flow (docs/approvals.md);
+- a ``tools/call`` that already carries a Passport (e.g. after a human approval) is checked with AXG's
+  Passport introspection instead of a new decision, and passes unchanged when valid;
 - every other MCP method passes through unchanged.
 
 Configuration (environment variables):
@@ -85,10 +87,10 @@ def build_decision_request(body: dict[str, Any], headers: dict[str, str]) -> dic
     }
 
 
-def ask_axg(decision_request: dict[str, Any]) -> dict[str, Any]:
+def _post_axg(path: str, payload: dict[str, Any]) -> dict[str, Any]:
     request = urllib.request.Request(
-        f"{os.environ['AXG_URL'].rstrip('/')}/v1/decisions",
-        data=json.dumps(decision_request).encode("utf-8"),
+        f"{os.environ['AXG_URL'].rstrip('/')}{path}",
+        data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {os.environ['AXG_API_KEY']}"},
         method="POST",
     )
@@ -97,6 +99,45 @@ def ask_axg(decision_request: dict[str, Any]) -> dict[str, Any]:
             return json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         raise AxgUnavailable(str(exc)) from exc
+
+
+def ask_axg(decision_request: dict[str, Any]) -> dict[str, Any]:
+    return _post_axg("/v1/decisions", decision_request)
+
+
+def introspect_passport(passport: str, tool: str, authorized: dict[str, Any]) -> dict[str, Any]:
+    """Ask AXG whether a Passport is valid for this tool and payload (RS256 cannot be checked with the stdlib)."""
+    return _post_axg("/v1/passports/introspect", {"passport": passport, "action_type": tool, "actionable_payload": authorized})
+
+
+def _arguments_authorized(arguments: dict[str, Any], authorized: dict[str, Any]) -> bool:
+    """Every argument must appear, unchanged, in the payload the Passport authorizes."""
+    return all(key in authorized and authorized[key] == value for key, value in arguments.items() if key != "axg")
+
+
+def _approved_call(body: dict[str, Any], params: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+    """A call that already carries a Passport (for example after a human approval): check it instead of deciding again.
+
+    AXG is stateless, so single use is enforced where the Passport is consumed: the MCP tool verifies it with a
+    replay cache, as it does for every AXG-authorized call.
+    """
+    authorized = meta.get(PAYLOAD_META_KEY)
+    if not isinstance(authorized, dict) or not _arguments_authorized(params.get("arguments") or {}, authorized):
+        return _tool_error(body, "Blocked: the arguments differ from what the Passport authorizes.", {"decision": "INVALID_PASSPORT"})
+    try:
+        result = introspect_passport(meta[PASSPORT_META_KEY], params.get("name") or "", authorized)
+    except AxgUnavailable as exc:
+        logger.error("AXG unavailable, refusing Passport-carrying call %s: %s", params.get("name"), exc)
+        return _tool_error(
+            body, "This action could not be authorized right now (governance service unavailable). Try again later.",
+            {"decision": "UNAVAILABLE"},
+        )
+    if not result.get("active"):
+        reason = result.get("reason") or "the Passport is not valid for this call"
+        return _tool_error(body, f"Blocked: {reason}.", {"decision": "INVALID_PASSPORT"})
+    logger.info(json.dumps({"event": "axg.agentcore.passport_accepted", "tool": params.get("name"),
+                            "jti": (result.get("claims") or {}).get("jti")}))
+    return _pass_through(body)
 
 
 def _tool_error(
@@ -137,6 +178,11 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
     body = gateway_request.get("body") or {}
     if body.get("method") != "tools/call":
         return _pass_through(body)
+
+    params = body.get("params") or {}
+    meta = params.get("_meta") or {}
+    if meta.get(PASSPORT_META_KEY):
+        return _approved_call(body, params, meta)
 
     decision_request = build_decision_request(body, gateway_request.get("headers") or {})
     try:

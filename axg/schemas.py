@@ -19,6 +19,8 @@ from axg.models import (
     ApprovalRequest,
     ApprovalResponse,
     ApprovalTicketClaims,
+    IntrospectionRequest,
+    IntrospectionResponse,
     DecisionRequest,
     DecisionResponse,
     ExecutionRecord,
@@ -39,6 +41,8 @@ CONTRACTS: dict[str, type[BaseModel]] = {
     "approval_request.v1": ApprovalRequest,
     "approval_response.v1": ApprovalResponse,
     "approval_record.v1": ApprovalRecord,
+    "passport_introspection_request.v1": IntrospectionRequest,
+    "passport_introspection_response.v1": IntrospectionResponse,
 }
 
 

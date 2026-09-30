@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import urllib.error
+import urllib.parse
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,10 +20,12 @@ def _jwt(claims: dict) -> str:
     return f"{enc({'alg': 'RS256'})}.{enc(claims)}.signature-checked-by-gateway"
 
 
-def _event(method="tools/call", arguments=None, name="create_expense", claims=None):
+def _event(method="tools/call", arguments=None, name="create_expense", claims=None, meta=None):
     body = {"jsonrpc": "2.0", "id": 7, "method": method}
     if method == "tools/call":
         body["params"] = {"name": name, "arguments": arguments or {}}
+        if meta:
+            body["params"]["_meta"] = meta
     token = _jwt(claims or {"sub": "user-1", "client_id": "agent-42", "tenant_id": "tenant_a", "scope": "expense:create"})
     return {
         "interceptorInputVersion": "1.0",
@@ -43,7 +46,8 @@ def axg(monkeypatch):
 
     def fake_urlopen(request, timeout):
         calls.append(json.loads(request.data))
-        response = client.post("/v1/decisions", content=request.data, headers=dict(request.header_items()))
+        path = urllib.parse.urlparse(request.full_url).path
+        response = client.post(path, content=request.data, headers=dict(request.header_items()))
         return io.BytesIO(response.content)
 
     monkeypatch.setattr(interceptor.urllib.request, "urlopen", fake_urlopen)
@@ -87,7 +91,7 @@ def test_confirm_short_circuits_with_readable_reason(axg):
 @pytest.mark.asyncio
 async def test_confirm_hands_the_host_an_approval_that_completes_the_mcp_call(axg):
     """The host approves; the resulting Passport authorizes exactly the original tool call."""
-    from axg_python_sdk import verify_mcp_tool_call
+    from axg_python_sdk import AxgVerificationError, InMemoryReplayCache, verify_mcp_tool_call
 
     from axg.approvals import ApprovalService
     from axg.auth import Caller
@@ -106,10 +110,24 @@ async def test_confirm_hands_the_host_an_approval_that_completes_the_mcp_call(ax
         approver={"id": "user-1", "role": "end_user"},
     ), host)
 
+    # The agent repeats the call with the approved Passport: the gateway checks it and lets it through
     meta = {"io.axg/passport": approved.passport, "io.axg/actionable_payload": approved.actionable_payload}
-    claims = verify_mcp_tool_call(meta, "create_expense", arguments, "finnorte",
-                                  tenant_id="tenant_a", public_key=key_manager.public_key)
+    output = interceptor.handler(_event(arguments=arguments, meta=meta))
+    forwarded = output["mcp"]["transformedGatewayRequest"]["body"]["params"]
+    assert axg[-1]["action_type"] == "create_expense" and "passport" in axg[-1]  # introspection, not a new decision
+
+    # The tool verifies before acting; the replay cache makes the approval single use
+    cache = InMemoryReplayCache()
+    claims = verify_mcp_tool_call(forwarded["_meta"], "create_expense", forwarded["arguments"], "finnorte",
+                                  tenant_id="tenant_a", public_key=key_manager.public_key, replay_cache=cache)
     assert claims["approval"]["approver_id"] == "user-1"
+    with pytest.raises(AxgVerificationError):
+        verify_mcp_tool_call(forwarded["_meta"], "create_expense", forwarded["arguments"], "finnorte",
+                             tenant_id="tenant_a", public_key=key_manager.public_key, replay_cache=cache)
+
+    # Changing an argument after approval is refused at the gateway
+    tampered = interceptor.handler(_event(arguments={**arguments, "amount": 9}, meta=meta))
+    assert _result(tampered)["structuredContent"]["axg"]["decision"] == "INVALID_PASSPORT"
 
 
 def test_block_is_reported_as_blocked(monkeypatch):
@@ -167,3 +185,35 @@ def test_scopes_as_list_and_sub_fallback(monkeypatch):
     headers = {"Authorization": f"Bearer {_jwt({'sub': 'svc-1', 'scope': ['a', 'b']})}"}
     request = interceptor.build_decision_request({"method": "tools/call", "params": {"name": "t"}}, headers)
     assert request["agent"] == {"id": "svc-1", "type": "agent", "permissions": ["a", "b"]}
+
+
+@pytest.mark.parametrize(
+    ("passport", "tool", "reason"),
+    [("not-a-jwt", "create_expense", "Invalid Passport"), (None, "create_income", "another action")],
+)
+def test_invalid_passports_are_refused_at_the_gateway(axg, passport, tool, reason):
+    from axg.crypto import sign_decision
+
+    payload = {"amount": 10}
+    token = passport or sign_decision(execution_id="e", app_id="finnorte", tenant_id="tenant_a", decision="ALLOW",
+                                      action_type="create_expense", actionable_payload=payload, client_id="x", policy="p@1")[0]
+    meta = {"io.axg/passport": token, "io.axg/actionable_payload": payload}
+    result = _result(interceptor.handler(_event(name=tool, arguments=payload, meta=meta)))
+    assert result["isError"] and reason in result["content"][0]["text"]
+
+
+def test_passport_without_payload_or_axg_down_is_refused(monkeypatch):
+    monkeypatch.setenv("AXG_URL", "https://axg.test")
+    monkeypatch.setenv("AXG_API_KEY", "k")
+    monkeypatch.setenv("AXG_APP_ID", "finnorte")
+    no_payload = _result(interceptor.handler(_event(arguments={"amount": 1}, meta={"io.axg/passport": "jwt"})))
+    assert no_payload["structuredContent"]["axg"]["decision"] == "INVALID_PASSPORT"
+
+    def down(_request, timeout):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr(interceptor.urllib.request, "urlopen", down)
+    meta = {"io.axg/passport": "jwt", "io.axg/actionable_payload": {"amount": 1}}
+    unavailable = _result(interceptor.handler(_event(arguments={"amount": 1}, meta=meta)))
+    assert unavailable["structuredContent"]["axg"]["decision"] == "UNAVAILABLE"
+
