@@ -97,7 +97,7 @@ Any system that can store a row can run the approval side. Pick the place your a
 | Your own backend | A table keyed by `ticket_id` with the ticket, payload, required role, expiry and status. [`examples/approvals/sqlite_approval_queue.py`](../examples/approvals/sqlite_approval_queue.py) is a complete, tested example |
 | An orchestrator such as MUAI | Its approval queue, shared by every application it serves |
 | LangGraph | The graph state: interrupt the tool node with the ticket and resume with the human's answer (sketch below) |
-| MCP through the [AgentCore interceptor](../integrations/agentcore) | The blocked tool result carries `_meta["io.axg/approval"]` (ticket, required role, expiry, payload) for the host application, outside the content the model reads. After approval, the agent repeats the call with the Passport, and the interceptor accepts it through Passport introspection |
+| MCP through the [MCP gateway](../integrations/mcp_gateway) or the [AgentCore interceptor](../integrations/agentcore) | The blocked tool result carries `_meta["io.axg/approval"]` (ticket, required role, expiry, payload) for the host application, outside the content the model reads. After approval, the agent repeats the call with the Passport, and the gateway or interceptor accepts it through Passport introspection |
 | Microsoft Agent Governance Toolkit | `AxgDecisionSink.ApprovalTicket`, `ApprovalTicketId`, `ApprovalRequiredRole`, `ApprovalExpiresAt` ([.NET backend](../integrations/agt-dotnet)) |
 | Claude Code | Nothing to store: the [hook](../integrations/claude_code) turns `CONFIRM` into `ask`, and Claude Code asks the user before the tool runs |
 

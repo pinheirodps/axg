@@ -140,6 +140,17 @@ def test_block_is_reported_as_blocked(monkeypatch):
     assert "_meta" not in result
 
 
+@pytest.mark.parametrize(("version", "result_type"), [(None, None), ("2025-11-25", None), ("2026-07-28", "complete")])
+def test_result_type_follows_the_client_protocol(monkeypatch, version, result_type):
+    # 2026-07-28 clients require resultType; clients of earlier versions reject unknown keys
+    monkeypatch.setenv("AXG_APP_ID", "finnorte")
+    monkeypatch.setattr(interceptor, "ask_axg", lambda _req: {"decision": "BLOCK", "reason": "not permitted"})
+    event = _event(arguments={"amount": 1})
+    if version:
+        event["mcp"]["gatewayRequest"]["headers"]["MCP-Protocol-Version"] = version
+    assert _result(interceptor.handler(event)).get("resultType") == result_type
+
+
 def test_axg_unavailable_fails_closed(monkeypatch):
     monkeypatch.setenv("AXG_URL", "https://axg.down")
     monkeypatch.setenv("AXG_API_KEY", "k")
@@ -174,7 +185,7 @@ def test_missing_or_garbage_token_uses_safe_defaults(monkeypatch):
     monkeypatch.setenv("AXG_APP_ID", "finnorte")
     body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "create_expense"}}
     for headers in ({}, {"authorization": "Bearer not.a-jwt"}, {"Authorization": "Basic abc"}):
-        request = interceptor.build_decision_request(body, headers)
+        request = interceptor.build_decision_request(body, interceptor._jwt_claims(headers))
         assert request["tenant_id"] == "default"
         assert request["agent"] == {"id": "unknown-agent", "type": "agent", "permissions": []}
         assert request["payload"] == {}
@@ -183,7 +194,7 @@ def test_missing_or_garbage_token_uses_safe_defaults(monkeypatch):
 def test_scopes_as_list_and_sub_fallback(monkeypatch):
     monkeypatch.setenv("AXG_APP_ID", "finnorte")
     headers = {"Authorization": f"Bearer {_jwt({'sub': 'svc-1', 'scope': ['a', 'b']})}"}
-    request = interceptor.build_decision_request({"method": "tools/call", "params": {"name": "t"}}, headers)
+    request = interceptor.build_decision_request({"method": "tools/call", "params": {"name": "t"}}, interceptor._jwt_claims(headers))
     assert request["agent"] == {"id": "svc-1", "type": "agent", "permissions": ["a", "b"]}
 
 
