@@ -207,6 +207,14 @@
       "default": false,
       "title": "Shadow Mode",
       "type": "boolean"
+    },
+    "verified_context": {
+      "description": "Providers whose signed context was verified and given to the rules",
+      "items": {
+        "type": "string"
+      },
+      "title": "Verified Context",
+      "type": "array"
     }
   },
   "required": [

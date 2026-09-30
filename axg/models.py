@@ -51,7 +51,15 @@ class DecisionRequest(BaseModel):
     source: str
     action_type: str
     payload: dict[str, Any] = Field(default_factory=dict)
-    context: dict[str, Any] = Field(default_factory=dict)
+    context: dict[str, Any] = Field(
+        default_factory=dict, description="Facts reported by the caller; rules read them as context.<fact>"
+    )
+    signed_context: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="JWTs from trusted context providers (AXG_CONTEXT_PROVIDERS); rules read their facts as "
+        "verified.<provider>.<fact>",
+    )
     llm: LlmSignal = Field(default_factory=LlmSignal)
     intent: dict[str, Any] = Field(default_factory=dict)
     shadow_mode: bool = False
@@ -91,6 +99,9 @@ class DecisionResponse(BaseModel):
         default=None,
         description="For CONFIRM and SUGGEST: a signed ticket that a human approver exchanges for a Passport",
     )
+    verified_context: list[str] = Field(
+        default_factory=list, description="Providers whose signed context was verified and given to the rules"
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -128,6 +139,9 @@ class ExecutionRecord(BaseModel):
     passport_id: str | None = Field(default=None, description="Passport jti; the token itself is never stored")
     human_confirmation_required: bool = False
     shadow_mode: bool = False
+    verified_context: list[str] = Field(
+        default_factory=list, description="Providers whose signed context was verified for this decision"
+    )
 
     # The execution, as reported back by the caller
     execution_status: ExecutionStatus = ExecutionStatus.PENDING
@@ -184,6 +198,11 @@ class ActionPolicy(BaseModel):
     required_permissions: list[str] = Field(default_factory=list)
     base_risk: float = Field(default=0.25, ge=0.0, le=1.0)
     approver_role: str | None = Field(default=None, description="Role that approves this action when a human must decide")
+    required_context: list[str] = Field(
+        default_factory=list,
+        description="Context providers whose verified facts this action needs; without them the decision is at "
+        "least CONFIRM",
+    )
 
 
 class ApprovalPolicy(BaseModel):

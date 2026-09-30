@@ -16,7 +16,8 @@ A `DecisionRequest` describes one proposed action:
 | `action_type`, `payload` | What the agent wants to do, and with which data |
 | `llm` | The proposer's `model` and `confidence` (0 to 1) |
 | `intent` | Optional intent-resolution details (`original`, `resolved`, `fallback_used`) |
-| `context`, `metadata` | Extra data that rules may read |
+| `context`, `metadata` | Extra data that rules may read, as reported by the caller |
+| `signed_context` | Facts signed by trusted providers; rules read them as `verified.<provider>.<fact>` ([Signed context](signed-context.md)) |
 | `shadow_mode` | Evaluate without authorizing anything (no Passport) |
 
 The full contract is in [API and contracts](api.md).
@@ -34,9 +35,12 @@ flowchart TD
     RP -- none --> K{Action declared?}
     K -- no --> C2[CONFIRM]
     K -- yes --> T[Thresholds on llm.confidence]
-    S --> A{ALLOW from an anonymous caller?}
-    T --> A
-    C1 --> A
+    S --> V{Required context verified?}
+    T --> V
+    C1 --> V
+    V -- no --> C4[At least CONFIRM]
+    V -- yes --> A{ALLOW from an anonymous caller?}
+    C4 --> A
     A -- yes --> C3[CONFIRM]
     A -- no --> P{ALLOW and not shadow?}
     P -- yes --> PS[Sign Passport]
@@ -44,14 +48,16 @@ flowchart TD
     PS --> OUT
 ```
 
+0. **Verify signed context.** Tokens in `signed_context` are checked; the facts of valid ones become `verified.<provider>.…` for the rules, and invalid ones are ignored (`signed_context_rejected`).
 1. **Load the policy.** If the plugin is missing or invalid, the decision is `CONFIRM` with risk 1.0 and the flag `plugin_load_failed`. AXG never fails open.
 2. **Uncertainty gate.** If the action is one of the plugin's gated writes and the uncertainty score reaches the gate threshold, the decision is `CONFIRM`.
 3. **Rules and permissions.** Every matching rule contributes its decision. If the agent lacks a permission the action requires, `BLOCK` is added. The strictest wins: `BLOCK > CONFIRM > SUGGEST > ALLOW`.
 4. **Undeclared actions.** An action the plugin does not declare gets `CONFIRM`.
 5. **Thresholds.** With no rule or permission outcome, `llm.confidence` decides: at or above `allow_min_confidence` gives `ALLOW`, at or above `suggest_min_confidence` gives `SUGGEST`, otherwise `CONFIRM`.
-6. **Caller check.** An `ALLOW` requested by an unauthenticated caller becomes `CONFIRM` (`unauthenticated_caller`).
-7. **Passport.** An `ALLOW` outside shadow mode is signed. If signing fails, the decision becomes `CONFIRM` (`passport_signing_failed`).
-8. **Approval ticket.** A `CONFIRM` or `SUGGEST` for an authenticated caller outside shadow mode carries a signed ticket naming the role that must approve. An approved ticket is exchanged for a Passport (see [Human approvals](approvals.md)).
+6. **Required context.** If the action declares `required_context` and a provider's verified facts are missing, `ALLOW` and `SUGGEST` become `CONFIRM` (`verified_context_missing`).
+7. **Caller check.** An `ALLOW` requested by an unauthenticated caller becomes `CONFIRM` (`unauthenticated_caller`).
+8. **Passport.** An `ALLOW` outside shadow mode is signed. If signing fails, the decision becomes `CONFIRM` (`passport_signing_failed`).
+9. **Approval ticket.** A `CONFIRM` or `SUGGEST` for an authenticated caller outside shadow mode carries a signed ticket naming the role that must approve. An approved ticket is exchanged for a Passport (see [Human approvals](approvals.md)).
 
 ## Scores
 

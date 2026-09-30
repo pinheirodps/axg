@@ -215,6 +215,14 @@
       "default": null,
       "description": "W3C trace id of the decision, linking this record to its OpenTelemetry trace",
       "title": "Trace Id"
+    },
+    "verified_context": {
+      "description": "Providers whose signed context was verified for this decision",
+      "items": {
+        "type": "string"
+      },
+      "title": "Verified Context",
+      "type": "array"
     }
   },
   "required": [

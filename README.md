@@ -145,6 +145,7 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 | [Concepts](docs/concepts.md) | Decision flow, scores, uncertainty gate, fail-safe principles |
 | [Writing policies](docs/policies.md) | Plugin format, rules and operators, permissions, validation |
 | [Human approvals](docs/approvals.md) | Approval tickets, who approves, exchanging a ticket for a Passport |
+| [Signed context](docs/signed-context.md) | Facts vouched for by trusted services, so rules do not depend on the caller's word |
 | [Passport](docs/passport.md) | Claims, verification in Python and Node, replay protection, key rotation, MCP |
 | [API and contracts](docs/api.md) | Endpoints, request and response fields, errors, JSON Schemas |
 | [Configuration and deployment](docs/configuration.md) | Environment variables, Docker, production checklist |
@@ -156,7 +157,7 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 
 AXG is **beta (v0.3.0)** and runs in production. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
 
-Next: signed context from trusted providers, an MCP gateway mode, and the first upload of the packages to PyPI and npm.
+Next: the first upload of the packages to PyPI and npm.
 
 ## Contributing
 
