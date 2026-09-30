@@ -7,14 +7,10 @@ A Passport is AXG's signed proof that an action was authorized for one app, one 
 ## Installation
 
 ```bash
-pip install axg-python-sdk
+pip install "axg-python-sdk @ git+https://github.com/pinheirodps/axg@v0.3.0#subdirectory=sdks/axg-python-sdk"
 ```
 
-Or install from git:
-
-```bash
-pip install "axg-python-sdk @ git+https://github.com/pinheirodps/axg#subdirectory=sdks/axg-python-sdk"
-```
+The PyPI package (`pip install axg-python-sdk`) is prepared by the release workflow; the [changelog](../../CHANGELOG.md) announces its first upload.
 
 Requires Python 3.11+ (PyJWT with cryptography is installed with it).
 
