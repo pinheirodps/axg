@@ -38,6 +38,9 @@ public class AxgPolicyBackendTests
                 reason = $"because {decision}",
                 actionable_payload = new { amount = 10, proposed_action = "create_expense" },
                 scores = new { risk_level = "medium" },
+                approval = decision is "CONFIRM" or "SUGGEST"
+                    ? new { ticket = "ticket.jwt", ticket_id = "ticket-1", required_role = "end_user", expires_at = 1790000000L }
+                    : null,
             }), Encoding.UTF8, "application/json"),
         };
 
@@ -203,6 +206,8 @@ public class AxgPolicyBackendTests
         Assert.Equal("medium", sink.RiskLevel);
         Assert.Contains("create_expense", sink.ActionablePayloadJson);
         Assert.False(sink.RequiresApproval);
+        Assert.Null(sink.ApprovalTicket);
+        Assert.Null(sink.ApprovalExpiresAt);
     }
 
     [Fact]
@@ -214,6 +219,10 @@ public class AxgPolicyBackendTests
         Assert.False(EngineWithAllowAllRule(confirming).Evaluate("did:mesh:agent-1", context).Allowed);
         Assert.True(sink.RequiresApproval);
         Assert.Null(sink.Passport);
+        Assert.Equal("ticket.jwt", sink.ApprovalTicket);
+        Assert.Equal("ticket-1", sink.ApprovalTicketId);
+        Assert.Equal("end_user", sink.ApprovalRequiredRole);
+        Assert.Equal(1790000000L, sink.ApprovalExpiresAt);
 
         var (down, _) = Backend(_ => throw new HttpRequestException("down"));
         var context2 = Context();

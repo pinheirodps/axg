@@ -161,6 +161,74 @@ export async function verifyPassport(
 
 export const PASSPORT_META_KEY = 'io.axg/passport';
 export const PAYLOAD_META_KEY = 'io.axg/actionable_payload';
+/** Set by AXG integrations on a CONFIRM/SUGGEST tool result: the ticket and payload to approve. */
+export const APPROVAL_META_KEY = 'io.axg/approval';
+
+export interface ApprovalSubmission {
+  ticket: string;
+  /** Exactly the payload the approver saw. */
+  actionablePayload: Record<string, any>;
+  approver: { id: string; role: string };
+  outcome?: 'approve' | 'deny';
+}
+
+export interface ApprovalResult {
+  execution_id: string;
+  outcome: 'approved' | 'denied';
+  passport: string | null;
+  passport_id: string | null;
+  actionable_payload: Record<string, any>;
+}
+
+/** AXG refused or could not process an approval; `statusCode` is AXG's HTTP status. */
+export class AxgApprovalError extends Error {
+  constructor(message: string, public readonly statusCode: number) {
+    super(message);
+    this.name = 'AxgApprovalError';
+  }
+}
+
+/**
+ * Exchange an approval ticket for a single-use Passport (`outcome: 'approve'`, the default) or
+ * record a denial. Resolves with AXG's response: the Passport and the payload to execute.
+ */
+export async function submitApproval(
+  axgUrl: string,
+  apiKey: string,
+  submission: ApprovalSubmission,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ApprovalResult> {
+  const outcome = submission.outcome ?? 'approve';
+  if (outcome !== 'approve' && outcome !== 'deny') {
+    throw new TypeError("outcome must be 'approve' or 'deny'");
+  }
+  let response: Response;
+  try {
+    response = await fetchImpl(new URL('v1/approvals', axgUrl.endsWith('/') ? axgUrl : `${axgUrl}/`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        ticket: submission.ticket,
+        actionable_payload: submission.actionablePayload,
+        approver: submission.approver,
+        outcome,
+      }),
+    });
+  } catch (err: any) {
+    throw new AxgApprovalError(`AXG is unavailable: ${err?.name ?? 'network error'}`, 503);
+  }
+  if (response.status === 200) {
+    return (await response.json()) as ApprovalResult;
+  }
+  const text = await response.text();
+  let detail = text;
+  try {
+    detail = JSON.parse(text).detail ?? text;
+  } catch {
+    // not JSON: keep the text
+  }
+  throw new AxgApprovalError(`AXG refused the approval: ${detail}`, response.status);
+}
 
 /**
  * Verify, inside an MCP tool, that AXG authorized exactly this call.
@@ -198,8 +266,16 @@ export async function verifyMcpToolCall(
 export class AxgClient {
   private jwksUrl: string;
 
-  constructor(baseUrl: string) {
+  constructor(private readonly baseUrl: string, private readonly apiKey?: string) {
     this.jwksUrl = new URL('.well-known/jwks.json', baseUrl).toString();
+  }
+
+  /** `submitApproval` with this client's base URL and API key. */
+  async submitApproval(submission: ApprovalSubmission, fetchImpl: typeof fetch = fetch): Promise<ApprovalResult> {
+    if (!this.apiKey) {
+      throw new TypeError('AxgClient needs an apiKey to submit approvals');
+    }
+    return submitApproval(this.baseUrl, this.apiKey, submission, fetchImpl);
   }
 
   async verifyPassport(

@@ -7,6 +7,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Protocol
 
+import httpx
 import jwt
 from jwt import PyJWKClient
 
@@ -138,6 +139,64 @@ def verify_passport(
 
 PASSPORT_META_KEY = "io.axg/passport"
 PAYLOAD_META_KEY = "io.axg/actionable_payload"
+# Set by AXG integrations on a CONFIRM/SUGGEST tool result: the ticket and payload to approve
+APPROVAL_META_KEY = "io.axg/approval"
+
+
+class AxgApprovalError(Exception):
+    """AXG refused or could not process an approval. ``status_code`` is AXG's HTTP status."""
+
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _approval_body(ticket, actionable_payload, approver_id, approver_role, outcome) -> Dict[str, Any]:
+    if outcome not in ("approve", "deny"):
+        raise ValueError("outcome must be 'approve' or 'deny'")
+    return {
+        "ticket": ticket,
+        "actionable_payload": actionable_payload,
+        "approver": {"id": approver_id, "role": approver_role},
+        "outcome": outcome,
+    }
+
+
+def _approval_result(response: httpx.Response) -> Dict[str, Any]:
+    if response.status_code == 200:
+        return response.json()
+    try:
+        detail = response.json().get("detail") or response.text
+    except ValueError:
+        detail = response.text
+    raise AxgApprovalError(f"AXG refused the approval: {detail}", response.status_code)
+
+
+def submit_approval(
+    axg_url: str,
+    api_key: str,
+    *,
+    ticket: str,
+    actionable_payload: Dict[str, Any],
+    approver_id: str,
+    approver_role: str,
+    outcome: str = "approve",
+    timeout: float = 5.0,
+) -> Dict[str, Any]:
+    """
+    Exchange an approval ticket for a single-use Passport (``outcome="approve"``) or record a
+    denial. Send exactly the payload the approver saw. Returns AXG's response: ``outcome``,
+    ``passport``, ``passport_id`` and the ``actionable_payload`` to execute.
+    """
+    body = _approval_body(ticket, actionable_payload, approver_id, approver_role, outcome)
+    try:
+        response = httpx.post(
+            f"{axg_url.rstrip('/')}/v1/approvals", json=body,
+            headers={"Authorization": f"Bearer {api_key}"}, timeout=timeout,
+        )
+    except httpx.HTTPError as exc:
+        raise AxgApprovalError(f"AXG is unavailable: {type(exc).__name__}", 503) from exc
+    return _approval_result(response)
 
 
 def verify_mcp_tool_call(
@@ -193,8 +252,9 @@ class AxgClient:
     Client for verifying AXG Passports in Python services.
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
         self.jwks_url = f"{self.base_url}/.well-known/jwks.json"
         # One client per AxgClient: PyJWKClient caches keys and refetches only on an unknown kid
         self._jwks_client = PyJWKClient(self.jwks_url)
@@ -226,3 +286,27 @@ class AxgClient:
             replay_cache=replay_cache,
             jwks_client=self._jwks_client,
         )
+
+    async def submit_approval(
+        self,
+        *,
+        ticket: str,
+        actionable_payload: Dict[str, Any],
+        approver_id: str,
+        approver_role: str,
+        outcome: str = "approve",
+        timeout: float = 5.0,
+    ) -> Dict[str, Any]:
+        """Async ``submit_approval`` with this client's base URL and API key."""
+        if not self.api_key:
+            raise ValueError("AxgClient needs an api_key to submit approvals")
+        body = _approval_body(ticket, actionable_payload, approver_id, approver_role, outcome)
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/v1/approvals", json=body, headers={"Authorization": f"Bearer {self.api_key}"}
+                )
+        except httpx.HTTPError as exc:
+            raise AxgApprovalError(f"AXG is unavailable: {type(exc).__name__}", 503) from exc
+        return _approval_result(response)
+

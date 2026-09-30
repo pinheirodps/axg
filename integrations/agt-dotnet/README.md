@@ -52,7 +52,8 @@ if (decision.Allowed)
 }
 else if (axgResult.RequiresApproval)
 {
-    // AXG asked for human confirmation: route to your approval flow
+    // Store axgResult.ApprovalTicket with axgResult.ActionablePayloadJson, show the payload to someone with
+    // axgResult.ApprovalRequiredRole, then exchange the ticket at POST /v1/approvals for a Passport
 }
 ```
 
@@ -61,7 +62,8 @@ else if (axgResult.RequiresApproval)
 Toolkit 5.0.0 does not copy backend metadata into `PolicyDecision`; its `external_backends` entries only carry `backend`, `allowed`, `reason`, `evaluation_ms` and `error`. So attach an `AxgDecisionSink` to each evaluation's context. The backend fills in:
 - `Decision`, `RequiresApproval`;
 - `Passport`, `PassportId`, `ActionablePayloadJson`;
-- `ExecutionId`, `RiskLevel`, `Error`.
+- `ExecutionId`, `RiskLevel`, `Error`;
+- for `CONFIRM`/`SUGGEST`: `ApprovalTicket`, `ApprovalTicketId`, `ApprovalRequiredRole`, `ApprovalExpiresAt` (see [Human approvals](../../docs/approvals.md)).
 
 One sink per evaluation is thread-safe; nothing is shared between calls.
 

@@ -7,7 +7,9 @@ Deploy as the gateway's REQUEST interceptor (Lambda, Python 3.12, standard libra
 - ALLOW: the call continues with the AXG Passport and the actionable payload in ``params._meta``,
   so the tool can verify the exact call it is executing;
 - SUGGEST / CONFIRM / BLOCK, or AXG unavailable: the tool is not called. The agent receives a
-  tool result with ``isError: true`` and the reason, so it can ask the user to confirm (fail closed);
+  tool result with ``isError: true`` and the reason, so it can ask the user to confirm (fail closed).
+  For SUGGEST / CONFIRM the result's ``_meta["io.axg/approval"]`` carries AXG's approval ticket and
+  the payload, for the host application to run the approval flow (docs/approvals.md);
 - every other MCP method passes through unchanged.
 
 Configuration (environment variables):
@@ -42,6 +44,7 @@ logger.setLevel(logging.INFO)
 PASSPORT_META_KEY = "io.axg/passport"
 PAYLOAD_META_KEY = "io.axg/actionable_payload"
 DECISION_META_KEY = "io.axg/decision"
+APPROVAL_META_KEY = "io.axg/approval"
 
 
 class AxgUnavailable(Exception):
@@ -96,8 +99,20 @@ def ask_axg(decision_request: dict[str, Any]) -> dict[str, Any]:
         raise AxgUnavailable(str(exc)) from exc
 
 
-def _tool_error(body: dict[str, Any], text: str, axg: dict[str, Any]) -> dict[str, Any]:
-    """Short-circuit the call with a tool result the agent can read (isError), not a protocol error."""
+def _tool_error(
+    body: dict[str, Any], text: str, axg: dict[str, Any], approval: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Short-circuit the call with a tool result the agent can read (isError), not a protocol error.
+
+    An approval goes in the result's _meta (host metadata), not in the content the model reads.
+    """
+    result: dict[str, Any] = {
+        "content": [{"type": "text", "text": text}],
+        "structuredContent": {"axg": axg},
+        "isError": True,
+    }
+    if approval:
+        result["_meta"] = {APPROVAL_META_KEY: approval}
     return {
         "interceptorOutputVersion": "1.0",
         "mcp": {
@@ -106,11 +121,7 @@ def _tool_error(body: dict[str, Any], text: str, axg: dict[str, Any]) -> dict[st
                 "body": {
                     "jsonrpc": "2.0",
                     "id": body.get("id"),
-                    "result": {
-                        "content": [{"type": "text", "text": text}],
-                        "structuredContent": {"axg": axg},
-                        "isError": True,
-                    },
+                    "result": result,
                 },
             }
         },
@@ -149,7 +160,10 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
 
     if verdict != "ALLOW" or not decision.get("passport"):
         prefix = "Blocked by policy" if verdict == "BLOCK" else "Confirmation required"
-        return _tool_error(body, f"{prefix}: {decision.get('reason') or 'no reason given'}", summary)
+        approval = decision.get("approval")
+        if approval:
+            approval = {**approval, "actionable_payload": decision.get("actionable_payload") or {}}
+        return _tool_error(body, f"{prefix}: {decision.get('reason') or 'no reason given'}", summary, approval)
 
     params = dict(body.get("params") or {})
     params["_meta"] = {

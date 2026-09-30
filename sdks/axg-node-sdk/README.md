@@ -60,6 +60,22 @@ const claims = await verifyMcpToolCall(
 );
 ```
 
+## Approvals
+
+When AXG answers `CONFIRM` or `SUGGEST`, the response carries an approval ticket. After the right person approves, exchange it for a Passport ([Human approvals](../../docs/approvals.md)):
+
+```ts
+import { AxgApprovalError, submitApproval } from 'axg-node-sdk';
+
+const result = await submitApproval('https://axg.example.com', apiKey, {
+  ticket: approval.ticket,
+  actionablePayload: payload,                 // exactly what the approver saw
+  approver: { id: 'ana', role: 'end_user' },  // outcome: 'deny' to refuse
+});
+```
+
+`new AxgClient(baseUrl, apiKey).submitApproval(...)` does the same. Refusals reject with `AxgApprovalError` and AXG's `statusCode`.
+
 ## Errors
 
 `AxgVerificationError.code` is one of `DECISION_NOT_ALLOWED`, `TENANT_ID_MISMATCH`, `ACTION_TYPE_MISMATCH`, `MISSING_PAYLOAD_HASH`, `PAYLOAD_TAMPERED`, `MISSING_JTI`, `PASSPORT_REPLAYED`, `MISSING_PASSPORT` and `ARGUMENTS_MISMATCH` (same meaning as in the Python SDK). JWT failures keep the [`jose`](https://github.com/panva/jose) code (`ERR_JWT_EXPIRED`, `ERR_JWS_SIGNATURE_VERIFICATION_FAILED`, `ERR_JWT_CLAIM_VALIDATION_FAILED`…); anything else is `VERIFICATION_FAILED`.

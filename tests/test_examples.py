@@ -67,3 +67,14 @@ async def test_policy_guide_table(changes, decision):
     request = DecisionRequest.model_validate({**REFUND, **changes})
     response = await DecisionEngine(loader=PluginLoader(EXAMPLES / "plugins")).decide(request)
     assert response.decision == decision
+
+
+@pytest.mark.asyncio
+async def test_self_hosted_approval_queue_example_runs():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("sqlite_queue", EXAMPLES / "approvals" / "sqlite_approval_queue.py")
+    example = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(example)
+    claims = await example.main()
+    assert claims["decision"] == "ALLOW" and claims["approval"]["approver_id"] == "ana"

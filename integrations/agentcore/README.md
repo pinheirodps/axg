@@ -76,6 +76,12 @@ The helper checks five things:
 
 Rules may add fields to the authorized payload, but they may never differ from the arguments.
 
+## Confirmations and approvals
+
+For `CONFIRM` and `SUGGEST`, the tool result carries `_meta["io.axg/approval"]`: AXG's approval ticket, `required_role`, `expires_at` and the `actionable_payload`. `_meta` is host metadata, not content the model reads. The host application stores it, asks the right person, and exchanges the ticket for a Passport (`submit_approval` / `submitApproval` in the SDKs). The host then runs the approved action through its own trusted path, with the Passport and payload for the tool to verify as above. See [Human approvals](../../docs/approvals.md).
+
+Repeating the call through the gateway is not supported yet: the interceptor asks AXG again, and AXG answers `CONFIRM` again. Accepting an approved Passport at the gateway needs Passport introspection, which is planned with the MCP gateway mode.
+
 ## Optional Cedar defense in depth
 
 With `AXG_CEDAR_CONTEXT=true`, Cedar can require an AXG `ALLOW`:

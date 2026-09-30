@@ -68,6 +68,23 @@ claims = verify_mcp_tool_call(
 )
 ```
 
+## Approvals
+
+When AXG answers `CONFIRM` or `SUGGEST`, the response carries an approval ticket. After the right person approves, exchange it for a Passport ([Human approvals](../../docs/approvals.md)):
+
+```python
+from axg_python_sdk import AxgApprovalError, submit_approval
+
+result = submit_approval(
+    "https://axg.example.com", api_key,
+    ticket=approval["ticket"], actionable_payload=payload,   # exactly what the approver saw
+    approver_id="ana", approver_role="end_user",              # outcome="deny" to refuse
+)
+passport, to_execute = result["passport"], result["actionable_payload"]
+```
+
+`AxgClient(base_url, api_key=...).submit_approval(...)` is the async variant. Refusals raise `AxgApprovalError` with AXG's `status_code` (403 wrong approver, 409 payload or policy changed, 503 AXG unavailable).
+
 ## Errors
 
 `AxgVerificationError.code` is one of:

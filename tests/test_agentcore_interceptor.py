@@ -84,6 +84,34 @@ def test_confirm_short_circuits_with_readable_reason(axg):
     assert output["mcp"]["transformedGatewayResponse"]["body"]["id"] == 7
 
 
+@pytest.mark.asyncio
+async def test_confirm_hands_the_host_an_approval_that_completes_the_mcp_call(axg):
+    """The host approves; the resulting Passport authorizes exactly the original tool call."""
+    from axg_python_sdk import verify_mcp_tool_call
+
+    from axg.approvals import ApprovalService
+    from axg.auth import Caller
+    from axg.engine import DecisionEngine
+    from axg.models import ApprovalRequest
+
+    arguments = {"merchant": "Uber", "amount": 1500, "currency": "EUR"}
+    result = _result(interceptor.handler(_event(arguments=arguments)))
+    approval = result["_meta"]["io.axg/approval"]
+    assert approval["required_role"] == "end_user" and approval["ticket"]
+    assert approval["ticket"] not in json.dumps(result["content"]) + json.dumps(result["structuredContent"])
+
+    host = Caller("host-app", True, frozenset({"finnorte"}), frozenset({"approvals:approve"}))
+    approved, _ = await ApprovalService(DecisionEngine().loader).submit(ApprovalRequest(
+        ticket=approval["ticket"], actionable_payload=approval["actionable_payload"],
+        approver={"id": "user-1", "role": "end_user"},
+    ), host)
+
+    meta = {"io.axg/passport": approved.passport, "io.axg/actionable_payload": approved.actionable_payload}
+    claims = verify_mcp_tool_call(meta, "create_expense", arguments, "finnorte",
+                                  tenant_id="tenant_a", public_key=key_manager.public_key)
+    assert claims["approval"]["approver_id"] == "user-1"
+
+
 def test_block_is_reported_as_blocked(monkeypatch):
     monkeypatch.setenv("AXG_URL", "https://axg.test")
     monkeypatch.setenv("AXG_API_KEY", "k")
@@ -91,6 +119,7 @@ def test_block_is_reported_as_blocked(monkeypatch):
     monkeypatch.setattr(interceptor, "ask_axg", lambda _req: {"decision": "BLOCK", "reason": "not permitted"})
     result = _result(interceptor.handler(_event(arguments={"amount": 1})))
     assert result["content"][0]["text"] == "Blocked by policy: not permitted"
+    assert "_meta" not in result
 
 
 def test_axg_unavailable_fails_closed(monkeypatch):
