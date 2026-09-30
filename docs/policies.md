@@ -80,6 +80,7 @@ The `$schema` line gives editors such as VS Code validation and completion. AXG 
 | `actions` | no | The actions this policy knows, with required permissions and base risk |
 | `rules` | no | Conditions that force a decision |
 | `uncertainty_gate` | no | Writes that must be confirmed when the intent behind them is uncertain |
+| `approval` | no | `default_role` (default `end_user`) and `ticket_ttl_seconds` (default 3600) for [human approvals](approvals.md) |
 
 ### `thresholds`
 
@@ -97,6 +98,7 @@ Each key is an `action_type`. Declare every action your agents may take: undecla
 |---|---|---|
 | `required_permissions` | `[]` | The agent must hold all of them (`agent.permissions`), capped by what its caller may grant. Missing any gives `BLOCK` |
 | `base_risk` | 0.25 | Starting `risk_score` for this action |
+| `approver_role` | plugin default | Role that approves this action when a human must decide |
 
 ## Rules
 
@@ -113,6 +115,7 @@ A rule matches when its `condition` holds. Every matching rule contributes its `
 | `risk_delta` | no | Added to `risk_score` |
 | `actionable_payload` | no | Fields merged into the payload that the Passport authorizes |
 | `audit_flags` | no | Flags added to the response (default: the rule `id`) |
+| `approver_role` | no | Role that must approve when this rule asks for a human; the strictest matched rule's role wins |
 
 ### Conditions
 

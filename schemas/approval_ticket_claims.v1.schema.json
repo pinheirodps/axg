@@ -1,0 +1,130 @@
+{
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/approval_ticket_claims.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Claims of an approval ticket: a CONFIRM/SUGGEST bound to one payload, awaiting a human.",
+  "properties": {
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "agent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Agent that proposed the action; it can never approve it",
+      "title": "Agent Id"
+    },
+    "aud": {
+      "description": "app_id",
+      "title": "Aud",
+      "type": "string"
+    },
+    "azp": {
+      "description": "client_id that requested the decision",
+      "title": "Azp",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "CONFIRM",
+        "SUGGEST"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "exp": {
+      "title": "Exp",
+      "type": "integer"
+    },
+    "iat": {
+      "title": "Iat",
+      "type": "integer"
+    },
+    "iss": {
+      "const": "axg-engine",
+      "default": "axg-engine",
+      "title": "Iss",
+      "type": "string"
+    },
+    "jti": {
+      "description": "ticket id; also the jti of the Passport it can produce",
+      "title": "Jti",
+      "type": "string"
+    },
+    "nbf": {
+      "title": "Nbf",
+      "type": "integer"
+    },
+    "payload_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Payload Hash",
+      "type": "string"
+    },
+    "plugin_id": {
+      "title": "Plugin Id",
+      "type": "string"
+    },
+    "policy": {
+      "description": "plugin@version that decided; approval is refused if the policy changed",
+      "title": "Policy",
+      "type": "string"
+    },
+    "required_role": {
+      "title": "Required Role",
+      "type": "string"
+    },
+    "sub": {
+      "description": "execution_id",
+      "title": "Sub",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "typ": {
+      "const": "approval",
+      "default": "approval",
+      "title": "Typ",
+      "type": "string"
+    },
+    "user_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "End user the action was proposed for",
+      "title": "User Id"
+    }
+  },
+  "required": [
+    "sub",
+    "aud",
+    "azp",
+    "iat",
+    "nbf",
+    "exp",
+    "jti",
+    "tenant_id",
+    "plugin_id",
+    "policy",
+    "decision",
+    "action_type",
+    "payload_hash",
+    "required_role"
+  ],
+  "title": "ApprovalTicketClaims",
+  "type": "object"
+}

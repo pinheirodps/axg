@@ -2,6 +2,19 @@
   "$defs": {
     "ActionPolicy": {
       "properties": {
+        "approver_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Role that approves this action when a human must decide",
+          "title": "Approver Role"
+        },
         "base_risk": {
           "default": 0.25,
           "maximum": 1.0,
@@ -18,6 +31,27 @@
         }
       },
       "title": "ActionPolicy",
+      "type": "object"
+    },
+    "ApprovalPolicy": {
+      "description": "How a human approves CONFIRM and SUGGEST decisions (docs/approvals.md).",
+      "properties": {
+        "default_role": {
+          "default": "end_user",
+          "description": "Approver role unless an action or rule asks for another",
+          "title": "Default Role",
+          "type": "string"
+        },
+        "ticket_ttl_seconds": {
+          "default": 3600,
+          "description": "How long an approval ticket stays valid",
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Ticket Ttl Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "ApprovalPolicy",
       "type": "object"
     },
     "ConditionGroup": {
@@ -72,6 +106,19 @@
           "additionalProperties": true,
           "title": "Actionable Payload",
           "type": "object"
+        },
+        "approver_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Role that must approve when this rule asks for a human",
+          "title": "Approver Role"
         },
         "audit_flags": {
           "items": {
@@ -246,6 +293,9 @@
       },
       "title": "Actions",
       "type": "object"
+    },
+    "approval": {
+      "$ref": "#/$defs/ApprovalPolicy"
     },
     "domain": {
       "title": "Domain",

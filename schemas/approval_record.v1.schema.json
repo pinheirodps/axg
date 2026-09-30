@@ -1,0 +1,106 @@
+{
+  "$id": "https://raw.githubusercontent.com/pinheirodps/axg/main/schemas/approval_record.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Audit record of a human approval or denial, written by the audit sinks.",
+  "properties": {
+    "action_type": {
+      "title": "Action Type",
+      "type": "string"
+    },
+    "app_id": {
+      "title": "App Id",
+      "type": "string"
+    },
+    "approver_id": {
+      "title": "Approver Id",
+      "type": "string"
+    },
+    "approver_role": {
+      "title": "Approver Role",
+      "type": "string"
+    },
+    "client_id": {
+      "description": "Caller that submitted the approval",
+      "title": "Client Id",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "approved",
+        "denied"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "passport_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Passport Id"
+    },
+    "payload_hash": {
+      "title": "Payload Hash",
+      "type": "string"
+    },
+    "policy": {
+      "title": "Policy",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "axg.approval_record.v1",
+      "default": "axg.approval_record.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "ticket_id": {
+      "title": "Ticket Id",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    }
+  },
+  "required": [
+    "execution_id",
+    "tenant_id",
+    "app_id",
+    "action_type",
+    "policy",
+    "ticket_id",
+    "payload_hash",
+    "approver_id",
+    "approver_role",
+    "outcome",
+    "client_id",
+    "created_at"
+  ],
+  "title": "ApprovalRecord",
+  "type": "object"
+}

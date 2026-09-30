@@ -87,6 +87,10 @@ class DecisionResponse(BaseModel):
     rules_triggered: list[TriggeredRule] = Field(default_factory=list)
     shadow_mode: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
+    approval: ApprovalChallenge | None = Field(
+        default=None,
+        description="For CONFIRM and SUGGEST: a signed ticket that a human approver exchanges for a Passport",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -167,6 +171,7 @@ class PolicyRule(BaseModel):
     risk_delta: float = Field(default=0.0, ge=0.0, le=1.0)
     actionable_payload: dict[str, Any] = Field(default_factory=dict)
     audit_flags: list[str] = Field(default_factory=list)
+    approver_role: str | None = Field(default=None, description="Role that must approve when this rule asks for a human")
 
 
 class Thresholds(BaseModel):
@@ -178,6 +183,14 @@ class Thresholds(BaseModel):
 class ActionPolicy(BaseModel):
     required_permissions: list[str] = Field(default_factory=list)
     base_risk: float = Field(default=0.25, ge=0.0, le=1.0)
+    approver_role: str | None = Field(default=None, description="Role that approves this action when a human must decide")
+
+
+class ApprovalPolicy(BaseModel):
+    """How a human approves CONFIRM and SUGGEST decisions (docs/approvals.md)."""
+
+    default_role: str = Field(default="end_user", description="Approver role unless an action or rule asks for another")
+    ticket_ttl_seconds: int = Field(default=3600, ge=60, le=604800, description="How long an approval ticket stays valid")
 
 
 class UncertaintyGate(BaseModel):
@@ -207,6 +220,7 @@ class Plugin(BaseModel):
     actions: dict[str, ActionPolicy] = Field(default_factory=dict)
     rules: list[PolicyRule] = Field(default_factory=list)
     uncertainty_gate: UncertaintyGate = Field(default_factory=UncertaintyGate)
+    approval: ApprovalPolicy = Field(default_factory=ApprovalPolicy)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -238,3 +252,96 @@ class PassportClaimsV2(BaseModel):
     action_type: str
     policy: str = Field(description="plugin@version that produced the decision")
     payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$", description="SHA-256 of the canonical actionable_payload")
+    approval: PassportApproval | None = Field(
+        default=None, description="Present when a human approved a CONFIRM or SUGGEST decision"
+    )
+
+
+class ApprovalChallenge(BaseModel):
+    """Returned with CONFIRM and SUGGEST: what the approver's side needs to store and show."""
+
+    ticket: str = Field(description="Signed approval ticket (JWT); exchange it at POST /v1/approvals")
+    ticket_id: str
+    required_role: str
+    expires_at: int = Field(description="Unix time after which the ticket is rejected")
+
+
+class ApprovalTicketClaims(BaseModel):
+    """Claims of an approval ticket: a CONFIRM/SUGGEST bound to one payload, awaiting a human."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    iss: Literal["axg-engine"] = "axg-engine"
+    typ: Literal["approval"] = "approval"
+    sub: str = Field(description="execution_id")
+    aud: str = Field(description="app_id")
+    azp: str = Field(description="client_id that requested the decision")
+    iat: int
+    nbf: int
+    exp: int
+    jti: str = Field(description="ticket id; also the jti of the Passport it can produce")
+    tenant_id: str
+    plugin_id: str
+    policy: str = Field(description="plugin@version that decided; approval is refused if the policy changed")
+    decision: Literal["CONFIRM", "SUGGEST"]
+    action_type: str
+    payload_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    required_role: str
+    user_id: str | None = Field(default=None, description="End user the action was proposed for")
+    agent_id: str | None = Field(default=None, description="Agent that proposed the action; it can never approve it")
+
+
+class ApproverIdentity(BaseModel):
+    id: str = Field(min_length=1, description="The human who decided, as authenticated by the application")
+    role: str = Field(min_length=1)
+
+
+class ApprovalRequest(BaseModel):
+    schema_version: str = "axg.approval_request.v1"
+    ticket: str
+    actionable_payload: dict[str, Any] = Field(description="Exactly the payload shown to the approver")
+    approver: ApproverIdentity
+    outcome: Literal["approve", "deny"] = "approve"
+
+
+class ApprovalResponse(BaseModel):
+    schema_version: str = "axg.approval_response.v1"
+    execution_id: str
+    outcome: Literal["approved", "denied"]
+    passport: str | None = None
+    passport_id: str | None = None
+    actionable_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class PassportApproval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticket_id: str
+    approver_id: str
+    approver_role: str
+
+
+class ApprovalRecord(BaseModel):
+    """Audit record of a human approval or denial, written by the audit sinks."""
+
+    schema_version: Literal["axg.approval_record.v1"] = "axg.approval_record.v1"
+    execution_id: str
+    tenant_id: str
+    app_id: str
+    action_type: str
+    policy: str
+    ticket_id: str
+    payload_hash: str
+    approver_id: str
+    approver_role: str
+    outcome: Literal["approved", "denied"]
+    client_id: str = Field(description="Caller that submitted the approval")
+    passport_id: str | None = None
+    created_at: str
+    trace_id: str | None = None
+
+
+
+# Resolve forward references to the approval models declared above
+DecisionResponse.model_rebuild()
+PassportClaimsV2.model_rebuild()

@@ -35,6 +35,7 @@ sequenceDiagram
 | `action_type` | The authorized action |
 | `policy` | `plugin@version` that produced the decision |
 | `payload_hash` | SHA-256 of the canonical JSON of the `actionable_payload` |
+| `approval` | Only on Passports produced by a [human approval](approvals.md): `ticket_id`, `approver_id`, `approver_role`. The `jti` is then the ticket id |
 
 The header carries `kid`, the RFC 7638 thumbprint of the signing key. The claims are published as [`schemas/passport_claims.v2.schema.json`](../schemas/passport_claims.v2.schema.json).
 

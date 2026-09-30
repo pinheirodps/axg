@@ -63,6 +63,9 @@ duration_histogram = _meter.create_histogram(
     explicit_bucket_boundaries_advisory=DURATION_BUCKETS,
 )
 
+approvals_counter = _meter.create_counter(
+    "axg.approvals", unit="{approval}", description="Approval submissions by outcome (approved, denied, rejected)."
+)
 
 class DecisionObservation:
     """Handle for the span of one decision; the engine reports the response through ``record``."""
@@ -152,6 +155,20 @@ def observe_decision(request: DecisionRequest, caller: Caller) -> Iterator[Decis
                         },
                     )
             duration_histogram.record(time.perf_counter() - started, metric_attributes)
+
+
+@contextmanager
+def observe_approval(caller: Caller) -> Iterator[dict[str, Any]]:
+    """Span ``axg.approve`` and the ``axg.approvals`` counter; the caller fills the yielded dict."""
+    outcome: dict[str, Any] = {"axg.approval.outcome": "rejected"}
+    with _tracer.start_as_current_span("axg.approve", attributes={"axg.client.id": caller.client_id}) as span:
+        try:
+            yield outcome
+        finally:
+            span.set_attributes(outcome)
+            approvals_counter.add(
+                1, {"axg.client.id": caller.client_id, "axg.approval.outcome": outcome["axg.approval.outcome"]}
+            )
 
 
 @contextmanager

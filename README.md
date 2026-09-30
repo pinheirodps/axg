@@ -123,11 +123,11 @@ Example policies live in [`plugins/`](plugins): `claude-code` (coding agents), `
 | Decision | Meaning | Passport |
 |---|---|---|
 | `ALLOW` | Safe to execute automatically | Yes, for authenticated callers outside shadow mode |
-| `SUGGEST` | Show as a recommendation; do not execute silently | No |
-| `CONFIRM` | A human must confirm before execution | No |
+| `SUGGEST` | Show as a recommendation; do not execute silently | After human approval |
+| `CONFIRM` | A human must confirm before execution | After human approval |
 | `BLOCK` | Denied by policy or missing permission | No |
 
-Precedence is `BLOCK > CONFIRM > SUGGEST > ALLOW`: the strictest applicable outcome wins. Errors never fail open: a policy that cannot be loaded, or a Passport that cannot be signed, results in `CONFIRM`. See [how AXG decides](docs/concepts.md).
+Precedence is `BLOCK > CONFIRM > SUGGEST > ALLOW`: the strictest applicable outcome wins. `CONFIRM` and `SUGGEST` carry a signed approval ticket: the right person approves, and AXG exchanges the ticket for a single-use Passport, with no state kept in AXG ([human approvals](docs/approvals.md)). Errors never fail open: a policy that cannot be loaded, or a Passport that cannot be signed, results in `CONFIRM`. See [how AXG decides](docs/concepts.md).
 
 ## Security
 
@@ -143,6 +143,7 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 |---|---|
 | [Concepts](docs/concepts.md) | Decision flow, scores, uncertainty gate, fail-safe principles |
 | [Writing policies](docs/policies.md) | Plugin format, rules and operators, permissions, validation |
+| [Human approvals](docs/approvals.md) | Approval tickets, who approves, exchanging a ticket for a Passport |
 | [Passport](docs/passport.md) | Claims, verification in Python and Node, replay protection, key rotation, MCP |
 | [API and contracts](docs/api.md) | Endpoints, request and response fields, errors, JSON Schemas |
 | [Configuration and deployment](docs/configuration.md) | Environment variables, Docker, production checklist |
@@ -154,7 +155,7 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 
 AXG is **beta (v0.3.0)** and runs in production. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
 
-Next: an approvals API to turn `CONFIRM` into a signed human decision, signed context from trusted providers, an MCP gateway mode, and the first upload of the packages to PyPI and npm.
+Next: signed context from trusted providers, an MCP gateway mode, and the first upload of the packages to PyPI and npm.
 
 ## Contributing
 
