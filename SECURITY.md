@@ -6,6 +6,7 @@ AXG issues cryptographic Passports that other systems trust before executing act
 
 | Version | Supported |
 |---|---|
+| 0.4.x | ✅ |
 | 0.3.x | ✅ |
 | 0.2.x | ❌ Upgrade: see the upgrade notes for 0.3.0 in the [changelog](CHANGELOG.md) |
 | < 0.2 | ❌ Upgrade: callers are unauthenticated and Passports are not bound to a tenant |
