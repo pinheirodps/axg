@@ -48,7 +48,7 @@ The hash uses canonical JSON in the style of RFC 8785 (sorted keys, no whitespac
 ## Verify in Python
 
 ```bash
-pip install "axg-python-sdk @ git+https://github.com/pinheirodps/axg@v0.3.0#subdirectory=sdks/axg-python-sdk"
+pip install "axg-python-sdk @ git+https://github.com/pinheirodps/axg@v0.4.0#subdirectory=sdks/axg-python-sdk"
 ```
 
 ```python

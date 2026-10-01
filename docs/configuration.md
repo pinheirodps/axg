@@ -83,7 +83,7 @@ The image `ghcr.io/pinheirodps/axg` is published for `linux/amd64` and `linux/ar
 |---|---|
 | `latest`, `main` | The current `main` branch |
 | `sha-<commit>` | One specific commit (immutable; use it in production) |
-| `<x.y.z>` | A release, for example `0.3.0` |
+| `<x.y.z>` | A release, for example `0.4.0` |
 
 ```bash
 docker run -d --name axg -p 8090:8090 \
@@ -93,7 +93,7 @@ docker run -d --name axg -p 8090:8090 \
   -e AXG_AUDIT_FILE=/var/lib/axg/audit.jsonl \
   -v axg-audit:/var/lib/axg \
   -v "$PWD/policies:/app/plugins:ro" \
-  ghcr.io/pinheirodps/axg:0.3.0
+  ghcr.io/pinheirodps/axg:0.4.0
 ```
 
 The repository's [`docker-compose.yml`](../docker-compose.yml) runs the same setup for local development. The container health check calls `GET /health`.
