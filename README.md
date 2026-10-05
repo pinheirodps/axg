@@ -118,7 +118,7 @@ Install the current release with `pip install "axg @ git+https://github.com/pinh
 | ticket2pr (Jira ticket → pull requests) | [Guide](integrations/ticket2pr) and a least-privilege policy for its headless Claude Code agent |
 | Observability | [OpenTelemetry](docs/observability.md) traces and metrics over OTLP |
 
-Example policies live in [`plugins/`](plugins): `claude-code` (coding agents), `ticket2pr` (a headless coding agent driven from Jira tickets), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
+Example policies live in [`plugins/`](plugins): `budget_guard` (AI spend), `claude-code` (coding agents), `ticket2pr` (a headless coding agent driven from Jira tickets), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
 
 ## Decisions
 
