@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `budget_guard` policy for `reserve_ai_credits`: blocks paid model calls for a tenant whose credit balance (`context.current_balance`) is zero or negative, and single calls estimated above 2 USD (`payload.estimated_cost_usd`). MUAI's LLM gateway already asks for it; until now AXG had no such policy and answered `CONFIRM` (`plugin_load_failed`), so spend was never checked.
+
 ## 0.4.0 (2026-10-01)
 
 ### Added

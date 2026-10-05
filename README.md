@@ -117,7 +117,7 @@ Install the current release with `pip install "axg @ git+https://github.com/pinh
 | Claude Code | [`PreToolUse` hook](integrations/claude_code) with a policy for shell and file tools |
 | Observability | [OpenTelemetry](docs/observability.md) traces and metrics over OTLP |
 
-Example policies live in [`plugins/`](plugins): `claude-code` (coding agents), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
+Example policies live in [`plugins/`](plugins): `budget_guard` (AI spend), `claude-code` (coding agents), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
 
 ## Decisions
 
