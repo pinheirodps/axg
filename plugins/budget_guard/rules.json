@@ -1,0 +1,44 @@
+{
+  "$schema": "../../schemas/plugin_manifest.v1.schema.json",
+  "plugin": "budget_guard",
+  "version": "0.1.0",
+  "domain": "ai_spend",
+  "thresholds": {
+    "allow_min_confidence": 0.85,
+    "suggest_min_confidence": 0.7,
+    "high_risk_threshold": 0.8
+  },
+  "actions": {
+    "reserve_ai_credits": {
+      "base_risk": 0.1
+    }
+  },
+  "rules": [
+    {
+      "id": "no_credit_balance",
+      "description": "A tenant with no credits left cannot start a paid model call.",
+      "condition": {
+        "all": [
+          { "field": "context.current_balance", "operator": "lte", "value": 0 }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "Sem saldo de créditos de IA para este tenant.",
+      "risk_delta": 0.6,
+      "audit_flags": ["budget_no_balance"]
+    },
+    {
+      "id": "single_call_cost_ceiling",
+      "description": "One model call estimated above 2 USD is refused: it is almost always a runaway prompt or a misconfigured model.",
+      "condition": {
+        "all": [
+          { "field": "payload.estimated_cost_usd", "operator": "gt", "value": 2.0 }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "Custo estimado de uma única chamada de IA acima do limite (2 USD).",
+      "risk_delta": 0.6,
+      "audit_flags": ["budget_single_call_ceiling"]
+    }
+  ]
+}

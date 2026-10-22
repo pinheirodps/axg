@@ -172,6 +172,7 @@ AXG can load a policy from an HTTPS URL used as the `plugin_id`. This is off by 
 
 | Plugin | Domain | Highlights |
 |---|---|---|
+| [`budget_guard`](../plugins/budget_guard/rules.json) | AI spend | Blocks paid model calls for tenants without credits and single calls estimated above 2 USD (`reserve_ai_credits`) |
 | [`claude-code`](../plugins/claude-code/rules.json) | Coding agents | Blocks destructive shell commands and piped remote scripts; confirms force pushes, deploys and secret files |
 | [`ticket2pr`](../plugins/ticket2pr/rules.json) | Headless coding agent | The `claude-code` rules as `BLOCK` (no one to confirm), plus no push, pull requests, Jira, credential reads or network calls (shell, file and web tools) from the agent |
 | [`finnorte`](../plugins/finnorte/rules.json) | Personal finance | Permissions per write, high-value and anomaly confirmations, financial uncertainty gate |

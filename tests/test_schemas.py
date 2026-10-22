@@ -86,7 +86,7 @@ def test_superseded_execution_record_v1_is_kept_for_existing_consumers():
     assert "muai_action_type" in v1["properties"]
 
 
-@pytest.mark.parametrize("plugin_id", ["claude-code", "finnorte", "pocket_lawyer", "ticket2pr"])
+@pytest.mark.parametrize("plugin_id", ["budget_guard", "claude-code", "finnorte", "pocket_lawyer", "ticket2pr"])
 def test_bundled_policies_validate_against_the_plugin_schema(plugin_id):
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads((schemas.SCHEMA_DIR / "plugin_manifest.v1.schema.json").read_text(encoding="utf-8"))
