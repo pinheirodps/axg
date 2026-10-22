@@ -115,9 +115,10 @@ Install the current release with `pip install "axg @ git+https://github.com/pinh
 | AWS Bedrock AgentCore Gateway | [REQUEST interceptor](integrations/agentcore) (Lambda) that decides before Cedar |
 | Microsoft Agent Governance Toolkit | [`IExternalPolicyBackend`](integrations/agt-dotnet) for .NET |
 | Claude Code | [`PreToolUse` hook](integrations/claude_code) with a policy for shell and file tools |
+| ticket2pr (Jira ticket → pull requests) | [Guide](integrations/ticket2pr) and a least-privilege policy for its headless Claude Code agent |
 | Observability | [OpenTelemetry](docs/observability.md) traces and metrics over OTLP |
 
-Example policies live in [`plugins/`](plugins): `claude-code` (coding agents), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
+Example policies live in [`plugins/`](plugins): `claude-code` (coding agents), `ticket2pr` (a headless coding agent driven from Jira tickets), `finnorte` (personal finance writes) and `pocket_lawyer` (legal assistant). Write your own with the [policy guide](docs/policies.md).
 
 ## Decisions
 
