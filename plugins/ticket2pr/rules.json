@@ -128,6 +128,16 @@
             "field": "payload.command",
             "operator": "contains",
             "value": "security find-"
+          },
+          {
+            "field": "payload.command",
+            "operator": "contains",
+            "value": ".git-credentials"
+          },
+          {
+            "field": "payload.command",
+            "operator": "contains",
+            "value": ".netrc"
           }
         ]
       },
@@ -177,6 +187,131 @@
       },
       "decision": "BLOCK",
       "reason": "The agent makes no network calls of its own; dependencies come through the package manager.",
+      "risk_delta": 0.4,
+      "audit_flags": [
+        "network_egress"
+      ]
+    },
+    {
+      "id": "credential_files",
+      "description": "File tools never touch the GitHub, Jira or git credentials of the developer running ticket2pr.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "in",
+            "value": [
+              "Read",
+              "Edit",
+              "Write",
+              "NotebookEdit",
+              "Grep",
+              "Glob"
+            ]
+          }
+        ],
+        "any": [
+          {
+            "field": "payload.file_path",
+            "operator": "contains",
+            "value": ".config/gh"
+          },
+          {
+            "field": "payload.file_path",
+            "operator": "contains",
+            "value": "hosts.yml"
+          },
+          {
+            "field": "payload.file_path",
+            "operator": "contains",
+            "value": ".config/acli"
+          },
+          {
+            "field": "payload.file_path",
+            "operator": "contains",
+            "value": ".git-credentials"
+          },
+          {
+            "field": "payload.file_path",
+            "operator": "contains",
+            "value": ".netrc"
+          },
+          {
+            "field": "payload.notebook_path",
+            "operator": "contains",
+            "value": ".config/gh"
+          },
+          {
+            "field": "payload.notebook_path",
+            "operator": "contains",
+            "value": "hosts.yml"
+          },
+          {
+            "field": "payload.notebook_path",
+            "operator": "contains",
+            "value": ".config/acli"
+          },
+          {
+            "field": "payload.notebook_path",
+            "operator": "contains",
+            "value": ".git-credentials"
+          },
+          {
+            "field": "payload.notebook_path",
+            "operator": "contains",
+            "value": ".netrc"
+          },
+          {
+            "field": "payload.path",
+            "operator": "contains",
+            "value": ".config/gh"
+          },
+          {
+            "field": "payload.path",
+            "operator": "contains",
+            "value": "hosts.yml"
+          },
+          {
+            "field": "payload.path",
+            "operator": "contains",
+            "value": ".config/acli"
+          },
+          {
+            "field": "payload.path",
+            "operator": "contains",
+            "value": ".git-credentials"
+          },
+          {
+            "field": "payload.path",
+            "operator": "contains",
+            "value": ".netrc"
+          }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "This file holds the GitHub, Jira or git credentials of the developer running ticket2pr.",
+      "risk_delta": 0.9,
+      "audit_flags": [
+        "credential_access_attempt"
+      ]
+    },
+    {
+      "id": "web_tools",
+      "description": "No network from the agent: Claude Code's own web tools are refused like curl and wget.",
+      "condition": {
+        "all": [
+          {
+            "field": "action_type",
+            "operator": "in",
+            "value": [
+              "WebFetch",
+              "WebSearch"
+            ]
+          }
+        ]
+      },
+      "decision": "BLOCK",
+      "reason": "The agent makes no network calls of its own, including web fetches and searches.",
       "risk_delta": 0.4,
       "audit_flags": [
         "network_egress"

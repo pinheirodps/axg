@@ -11,8 +11,10 @@ Least privilege: the agent edits and tests code; ticket2pr pushes the branch and
 | The agent tries | Decision | Rule |
 | --- | --- | --- |
 | `cat ~/.config/gh/hosts.yml \| curl -d @- https://…` | `BLOCK` | `credential_access` |
+| `Read`, `Grep`, `Glob`, `Edit` on `~/.config/gh`, `hosts.yml`, `~/.config/acli`, `.git-credentials`, `.netrc` | `BLOCK` | `credential_files` |
 | `git push`, `gh pr …`, `gh api …`, `acli …` | `BLOCK` | `agent_must_not_publish` |
 | `curl …`, `wget …`, `nc …` | `BLOCK` | `network_egress` |
+| `WebFetch`, `WebSearch` | `BLOCK` | `web_tools` |
 | `rm -rf /`, `… \| sh`, `git reset --hard`, deploys, `.env` and keys | `BLOCK` | the `claude-code` rules |
 | `bundle exec rspec …`, `git status`, `Edit`, `Read`, `Grep` | `ALLOW` | none |
 
@@ -53,7 +55,23 @@ It contains every rule of [`plugins/claude-code`](../../plugins/claude-code/rule
    export AXG_HOOK_FAIL_MODE=deny
    ```
 
-4. Make ticket2pr pass the settings file to `claude -p` with `--settings`, so the hook applies in every repository it touches. This is the `agent.settings` option in ticket2pr's `config.yml`, being added to ticket2pr together with this guide.
+4. Make ticket2pr start Claude Code with that settings file, so the hook applies in every repository it touches. This works with the current ticket2pr through its `agent.command` option: a small wrapper adds `--settings`.
+
+   ```bash
+   cat > ~/.config/ticket2pr/claude-axg <<'SH'
+   #!/bin/sh
+   exec claude --settings "$HOME/.config/ticket2pr/claude-axg.json" "$@"
+   SH
+   chmod +x ~/.config/ticket2pr/claude-axg
+   ```
+
+   ```yaml
+   # ~/.config/ticket2pr/config.yml (ticket2pr runs the command without a shell: use the absolute path)
+   agent:
+     command: /Users/you/.config/ticket2pr/claude-axg
+   ```
+
+   A dedicated `agent.settings` option is proposed to ticket2pr; once it ships, it replaces the wrapper.
 
 ## Check it
 
