@@ -164,7 +164,7 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 
 ## Status and roadmap
 
-AXG is **beta (v0.4.0)** and runs in production. Packages are published on PyPI ([`axg`](https://pypi.org/project/axg/), [`axg-python-sdk`](https://pypi.org/project/axg-python-sdk/)) and npm ([`axg-node-sdk`](https://www.npmjs.com/package/axg-node-sdk)) with provenance attestations, and multi-arch container images ship at `ghcr.io/pinheirodps/axg`. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
+AXG is **beta (v0.4.1)** and runs in production. Packages are published on PyPI ([`axg`](https://pypi.org/project/axg/), [`axg-python-sdk`](https://pypi.org/project/axg-python-sdk/)) and npm ([`axg-node-sdk`](https://www.npmjs.com/package/axg-node-sdk)) with provenance attestations, and multi-arch container images ship at `ghcr.io/pinheirodps/axg`. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
 
 ## Contributing
 
