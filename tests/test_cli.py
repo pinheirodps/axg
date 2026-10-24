@@ -247,3 +247,25 @@ async def test_cmd_without_dir_uses_the_bundled_plugins(tmp_path, capsys):
                               dir=None, shadow_mode=False)
     assert await cmd_simulate_decision(args) == 0
     assert json.loads(capsys.readouterr().out)["decision"] in {"ALLOW", "SUGGEST", "CONFIRM", "BLOCK"}
+
+
+@pytest.mark.asyncio
+async def test_without_dir_and_without_a_plugins_folder_the_cli_asks_for_dir(tmp_path, monkeypatch, capsys):
+    """A pip install ships no plugins folder: say so instead of 'plugin not found'."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("axg.cli.PluginLoader", lambda *args: SimpleNamespace(plugins_dir=tmp_path / "missing"))
+
+    assert await cmd_validate_plugin(argparse.Namespace(command="validate-plugin", id="demo", dir=None)) == 1
+    assert "Pass --dir" in capsys.readouterr().err
+
+    args = argparse.Namespace(command="simulate-decision", plugin="demo", payload="req.json", dir=None,
+                              shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 1
+    err = capsys.readouterr().err
+    assert "pip installs ship none" in err and str(tmp_path / "missing") in err
+
+
+def test_dir_help_explains_where_the_default_exists():
+    help_text = " ".join(get_parser()._subparsers._group_actions[0].choices["simulate-decision"].format_help().split())
+    assert "not in a pip install" in help_text and "/app/plugins" in help_text

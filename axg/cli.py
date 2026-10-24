@@ -10,6 +10,28 @@ from axg.engine import DecisionEngine
 from axg.models import DecisionRequest
 from axg.plugin_loader import PluginLoadError, PluginLoader
 
+DIR_HELP = (
+    "Folder holding one folder per plugin (<dir>/<plugin_id>/rules.json). Defaults to the plugins folder "
+    "next to the axg package, which exists in a repository checkout and in the Docker image (/app/plugins) "
+    "but not in a pip install"
+)
+
+
+def _plugins_dir(args: argparse.Namespace) -> Path | None:
+    """The --dir folder, or None for PluginLoader's default; None also when that default is missing."""
+    if args.dir:
+        return Path(args.dir)
+    default = PluginLoader().plugins_dir
+    if not default.is_dir():
+        print(
+            f"No --dir given and there is no plugins folder at {default} (pip installs ship none). "
+            "Pass --dir <folder>, where <folder>/<plugin_id>/rules.json is your policy.",
+            file=sys.stderr,
+        )
+        return None
+    return default
+
+
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="axg",
@@ -19,12 +41,12 @@ def get_parser() -> argparse.ArgumentParser:
 
     validate_parser = subparsers.add_parser("validate-plugin", help="Validates a plugin's rules.json against the plugin schema")
     validate_parser.add_argument("--id", required=True, help="Plugin ID to validate")
-    validate_parser.add_argument("--dir", default=None, help="Folder holding one folder per plugin (<dir>/<plugin_id>/rules.json); defaults to the bundled plugins")
+    validate_parser.add_argument("--dir", default=None, help=DIR_HELP)
 
     simulate_parser = subparsers.add_parser("simulate-decision", help="Simulates a decision request against a plugin")
     simulate_parser.add_argument("--plugin", required=True, help="Plugin ID to use")
     simulate_parser.add_argument("--payload", required=True, help="Path to the request payload JSON file")
-    simulate_parser.add_argument("--dir", default=None, help="Folder holding one folder per plugin (<dir>/<plugin_id>/rules.json); defaults to the bundled plugins")
+    simulate_parser.add_argument("--dir", default=None, help=DIR_HELP)
     simulate_parser.add_argument("--shadow-mode", action="store_true", help="Run simulation in shadow mode")
 
     audit_parser = subparsers.add_parser("verify-audit", help="Verifies the hash chain of a JSONL audit file")
@@ -34,7 +56,9 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 async def cmd_validate_plugin(args: argparse.Namespace) -> int:
-    base_dir = Path(args.dir) if args.dir else None
+    base_dir = _plugins_dir(args)
+    if base_dir is None:
+        return 1
     try:
         loader = PluginLoader(base_dir)
         plugin = await loader.load(args.id)
@@ -50,7 +74,9 @@ async def cmd_validate_plugin(args: argparse.Namespace) -> int:
 
 
 async def cmd_simulate_decision(args: argparse.Namespace) -> int:
-    base_dir = Path(args.dir) if args.dir else None
+    base_dir = _plugins_dir(args)
+    if base_dir is None:
+        return 1
     payload_path = Path(args.payload)
 
     if not payload_path.exists():
