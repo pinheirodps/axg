@@ -1,12 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 (2026-10-24)
 
 ### Added
 
 - Published `axg` and `axg-python-sdk` on PyPI and `axg-node-sdk` on npm with provenance attestations.
 - `budget_guard` policy for `reserve_ai_credits`: blocks paid model calls for a tenant whose credit balance (`context.current_balance`) is zero or negative, and single calls estimated above 2 USD (`payload.estimated_cost_usd`). MUAI's LLM gateway already asks for it; until now AXG had no such policy and answered `CONFIRM` (`plugin_load_failed`), so spend was never checked.
 - `ticket2pr` policy and integration guide (`integrations/ticket2pr`) for [ticket2pr](https://github.com/marcelorxaviers/ruby/tree/master/ticket2pr), which drives Claude Code headless from Jira tickets. Least privilege: the agent edits and tests; pushing, pull requests, Jira, credential reads (shell and file tools) and network calls (shell and Claude Code's web tools) are blocked. It keeps every `claude-code` rule, as `BLOCK` because nobody confirms in a headless run; a test keeps the two policies in step.
+
+### Fixed
+
+- `axg validate-plugin` and `axg simulate-decision`: `--dir` is the folder that holds one folder per plugin (`<dir>/<plugin_id>/rules.json`), as the CLI always used it; the help said otherwise. Without `--dir` both commands use the bundled plugins (the old default `.` only worked inside a plugins folder). The `validate-plugin` help no longer mentions an `actions.json` that does not exist.
 
 ## 0.4.0 (2026-10-01)
 
