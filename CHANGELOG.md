@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `axg validate-plugin` and `axg simulate-decision` without `--dir` in a pip install: the wheel ships no plugins folder, so the CLI now says so and asks for `--dir` instead of reporting the plugin as not found. The `--dir` help says where the default folder exists (a repository checkout and the Docker image's `/app/plugins`); 0.4.1 described it as the bundled plugins.
+
 ## 0.4.1 (2026-10-24)
 
 ### Added
