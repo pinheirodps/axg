@@ -17,14 +17,14 @@ def get_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    validate_parser = subparsers.add_parser("validate-plugin", help="Validates a plugin's rules.json and actions.json")
+    validate_parser = subparsers.add_parser("validate-plugin", help="Validates a plugin's rules.json against the plugin schema")
     validate_parser.add_argument("--id", required=True, help="Plugin ID to validate")
-    validate_parser.add_argument("--dir", default=".", help="Base directory containing the plugins folder")
+    validate_parser.add_argument("--dir", default=None, help="Folder holding one folder per plugin (<dir>/<plugin_id>/rules.json); defaults to the bundled plugins")
 
     simulate_parser = subparsers.add_parser("simulate-decision", help="Simulates a decision request against a plugin")
     simulate_parser.add_argument("--plugin", required=True, help="Plugin ID to use")
     simulate_parser.add_argument("--payload", required=True, help="Path to the request payload JSON file")
-    simulate_parser.add_argument("--dir", default=".", help="Base directory containing the plugins folder")
+    simulate_parser.add_argument("--dir", default=None, help="Folder holding one folder per plugin (<dir>/<plugin_id>/rules.json); defaults to the bundled plugins")
     simulate_parser.add_argument("--shadow-mode", action="store_true", help="Run simulation in shadow mode")
 
     audit_parser = subparsers.add_parser("verify-audit", help="Verifies the hash chain of a JSONL audit file")
@@ -34,7 +34,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 async def cmd_validate_plugin(args: argparse.Namespace) -> int:
-    base_dir = Path(args.dir)
+    base_dir = Path(args.dir) if args.dir else None
     try:
         loader = PluginLoader(base_dir)
         plugin = await loader.load(args.id)
@@ -50,7 +50,7 @@ async def cmd_validate_plugin(args: argparse.Namespace) -> int:
 
 
 async def cmd_simulate_decision(args: argparse.Namespace) -> int:
-    base_dir = Path(args.dir)
+    base_dir = Path(args.dir) if args.dir else None
     payload_path = Path(args.payload)
 
     if not payload_path.exists():

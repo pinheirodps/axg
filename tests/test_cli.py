@@ -221,3 +221,29 @@ async def test_cmd_simulate_decision_shadow_mode(tmp_path, capsys):
     captured = capsys.readouterr()
     response = json.loads(captured.out)
     assert response["shadow_mode"] is True
+
+
+def test_parser_dir_defaults_to_the_bundled_plugins():
+    parser = get_parser()
+    assert parser.parse_args(["validate-plugin", "--id", "finnorte"]).dir is None
+    assert parser.parse_args(["simulate-decision", "--plugin", "p", "--payload", "f"]).dir is None
+    help_text = parser._subparsers._group_actions[0].choices["validate-plugin"].format_help()
+    assert "<dir>/<plugin_id>/rules.json" in " ".join(help_text.split())
+    assert "actions.json" not in parser.format_help()
+
+
+@pytest.mark.asyncio
+async def test_cmd_without_dir_uses_the_bundled_plugins(tmp_path, capsys):
+    """`--dir` is the folder that holds the plugin folders; without it the bundled plugins are used."""
+    assert await cmd_validate_plugin(argparse.Namespace(command="validate-plugin", id="finnorte", dir=None)) == 0
+    assert "Plugin 'finnorte'" in capsys.readouterr().out
+
+    payload_file = tmp_path / "req.json"
+    payload_file.write_text(json.dumps({
+        "execution_id": "e1", "tenant_id": "t", "app_id": "finnorte", "plugin_id": "finnorte",
+        "source": "api", "action_type": "create_expense", "payload": {"amount": 10},
+    }), encoding="utf-8")
+    args = argparse.Namespace(command="simulate-decision", plugin="finnorte", payload=str(payload_file),
+                              dir=None, shadow_mode=False)
+    assert await cmd_simulate_decision(args) == 0
+    assert json.loads(capsys.readouterr().out)["decision"] in {"ALLOW", "SUGGEST", "CONFIRM", "BLOCK"}
