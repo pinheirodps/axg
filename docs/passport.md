@@ -48,7 +48,7 @@ The hash uses canonical JSON in the style of RFC 8785 (sorted keys, no whitespac
 ## Verify in Python
 
 ```bash
-pip install "axg-python-sdk @ git+https://github.com/pinheirodps/axg@v0.4.0#subdirectory=sdks/axg-python-sdk"
+pip install axg-python-sdk
 ```
 
 ```python
@@ -76,7 +76,11 @@ In async services, `AxgClient(base_url).verify_passport(...)` keeps a cached JWK
 
 ## Verify in Node
 
-The Node SDK lives in [`sdks/axg-node-sdk`](../sdks/axg-node-sdk). Build it from the repository until it is published to npm.
+```bash
+npm install axg-node-sdk
+```
+
+The Node SDK lives in [`sdks/axg-node-sdk`](../sdks/axg-node-sdk) and is published on npm as [`axg-node-sdk`](https://www.npmjs.com/package/axg-node-sdk).
 
 ```ts
 import { AxgClient, AxgVerificationError, InMemoryReplayCache } from 'axg-node-sdk';

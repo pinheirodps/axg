@@ -3,6 +3,9 @@
 ![AXG](images/hero.png)
 
 [![CI](https://github.com/pinheirodps/axg/actions/workflows/ci.yml/badge.svg)](https://github.com/pinheirodps/axg/actions/workflows/ci.yml)
+[![PyPI - axg](https://img.shields.io/pypi/v/axg?label=pypi%20%7C%20axg)](https://pypi.org/project/axg/)
+[![PyPI - axg-python-sdk](https://img.shields.io/pypi/v/axg-python-sdk?label=pypi%20%7C%20axg-python-sdk)](https://pypi.org/project/axg-python-sdk/)
+[![npm - axg-node-sdk](https://img.shields.io/npm/v/axg-node-sdk?label=npm%20%7C%20axg-node-sdk)](https://www.npmjs.com/package/axg-node-sdk)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 
@@ -80,7 +83,13 @@ curl -s localhost:8090/v1/decisions -H "Authorization: Bearer $AXG_KEY" \
 }
 ```
 
-Or embed the engine in a Python process:
+Or install from PyPI and embed the engine in a Python process (or run the CLI directly):
+
+```bash
+pip install axg              # core engine, HTTP API and CLI (use "axg[otel]" for OpenTelemetry export)
+pip install axg-python-sdk   # verify Passports and exchange approval tickets in Python
+npm install axg-node-sdk     # verify Passports and exchange approval tickets in Node.js / TypeScript
+```
 
 ```python
 import asyncio
@@ -103,7 +112,6 @@ async def main():
 asyncio.run(main())
 ```
 
-Install the current release with `pip install "axg @ git+https://github.com/pinheirodps/axg@v0.4.0"` (add `[otel]` for OpenTelemetry export). PyPI and npm packages are prepared by the release workflow and will be announced in the [changelog](CHANGELOG.md) once uploaded.
 
 ## Integrations
 
@@ -156,9 +164,7 @@ Read the [security model](docs/security-model.md) before exposing AXG outside a 
 
 ## Status and roadmap
 
-AXG is **beta (v0.4.0)** and runs in production. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
-
-Next: the first upload of the packages to PyPI and npm.
+AXG is **beta (v0.4.0)** and runs in production. Packages are published on PyPI ([`axg`](https://pypi.org/project/axg/), [`axg-python-sdk`](https://pypi.org/project/axg-python-sdk/)) and npm ([`axg-node-sdk`](https://www.npmjs.com/package/axg-node-sdk)) with provenance attestations, and multi-arch container images ship at `ghcr.io/pinheirodps/axg`. The API may change before 1.0; breaking changes are versioned in the contracts and listed in the [changelog](CHANGELOG.md).
 
 ## Contributing
 

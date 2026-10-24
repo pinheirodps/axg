@@ -6,17 +6,11 @@ A Passport is AXG's signed proof that an action was authorized for one app, one 
 
 ## Installation
 
-Build the release from source and install the packed tarball:
-
 ```bash
-git clone --branch v0.4.0 https://github.com/pinheirodps/axg && cd axg/sdks/axg-node-sdk
-npm ci && npm run build && npm pack          # produces axg-node-sdk-0.4.0.tgz
-npm install /path/to/axg-node-sdk-0.4.0.tgz  # in your project
+npm install axg-node-sdk
 ```
 
-The npm package (`npm install axg-node-sdk`) is prepared by the release workflow; the [changelog](../../CHANGELOG.md) announces its first upload.
-
-Ships ESM and CommonJS builds with TypeScript types. Tested on Node.js 20.
+Ships ESM and CommonJS builds with TypeScript types. Tested on Node.js 20+.
 
 ## Verify a Passport
 
